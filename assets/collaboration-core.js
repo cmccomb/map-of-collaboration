@@ -344,6 +344,60 @@
       );
   }
 
+  function selectionLayout(filtered, nodeId) {
+    const selected = filtered.nodeById.get(nodeId);
+    if (!selected) return new Map();
+
+    const connections = connectionsForNode(filtered, nodeId);
+    const positions = new Map([[nodeId, { x: selected.x, y: selected.y }]]);
+    if (!connections.length) return positions;
+
+    const collaborators = connections
+      .map((connection) => ({
+        connection,
+        node: filtered.nodeById.get(connection.collaboratorId),
+      }))
+      .filter(({ node }) => node);
+    const byOriginalAngle = (left, right) => {
+      const leftAngle = Math.atan2(left.node.y - selected.y, left.node.x - selected.x);
+      const rightAngle = Math.atan2(right.node.y - selected.y, right.node.x - selected.x);
+      return leftAngle - rightAngle || left.node.id.localeCompare(right.node.id);
+    };
+    const placeRing = (items, radius, rotation = -Math.PI / 2) => {
+      const ordered = [...items].sort(byOriginalAngle);
+      const step = (Math.PI * 2) / Math.max(1, ordered.length);
+      ordered.forEach(({ node }, index) => {
+        const angle = rotation + step * index;
+        positions.set(node.id, {
+          x: selected.x + Math.cos(angle) * radius,
+          y: selected.y + Math.sin(angle) * radius,
+        });
+      });
+    };
+
+    if (collaborators.length <= 10) {
+      placeRing(collaborators, 0.22 + Math.min(0.2, collaborators.length * 0.02));
+      return positions;
+    }
+
+    const innerCount = Math.min(7, Math.ceil(collaborators.length * 0.4));
+    const strongestIds = new Set(
+      [...collaborators]
+        .sort(
+          (left, right) =>
+            right.connection.count - left.connection.count ||
+            left.node.id.localeCompare(right.node.id),
+        )
+        .slice(0, innerCount)
+        .map(({ node }) => node.id),
+    );
+    const inner = collaborators.filter(({ node }) => strongestIds.has(node.id));
+    const outer = collaborators.filter(({ node }) => !strongestIds.has(node.id));
+    placeRing(inner, 0.29);
+    placeRing(outer, 0.52, -Math.PI / 2 + Math.PI / Math.max(1, outer.length));
+    return positions;
+  }
+
   function csvEscape(value) {
     const text = String(value ?? "");
     return /[",\n\r]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
@@ -385,6 +439,7 @@
     filterGraph,
     parseGraph,
     safeExternalUrl,
+    selectionLayout,
     stateFromSearch,
     stateToSearch,
   });

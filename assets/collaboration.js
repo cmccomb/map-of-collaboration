@@ -59,6 +59,8 @@
     activeSuggestion: -1,
     suggestionNodes: [],
     drag: null,
+    layoutPositions: new Map(),
+    transition: null,
     renderQueued: false,
     toastTimer: 0,
   };
@@ -221,7 +223,7 @@
     elements.showUnconnected.checked = view.showUnconnected;
   }
 
-  function applyView({ fit = false, updateUrl = true } = {}) {
+  function applyView({ fit = false, updateUrl = true, animate = false } = {}) {
     state.filtered = core.filterGraph(state.graph, state.view);
     state.expandedEdgeId = state.filtered.edgeById.has(state.expandedEdgeId)
       ? state.expandedEdgeId
@@ -234,7 +236,7 @@
     }
     updateStats();
     renderDetails();
-    if (fit) fitVisible();
+    if (fit) refitCurrent({ animate });
     requestRender();
   }
 
@@ -264,13 +266,80 @@
     };
   }
 
-  function fitNodes(nodes, { maximumScale = 720 } = {}) {
-    if (!nodes?.length || !state.width || !state.height) return;
+  function easeOutCubic(value) {
+    return 1 - Math.pow(1 - value, 3);
+  }
+
+  function transitionProgress(now = performance.now()) {
+    if (!state.transition) return 1;
+    return Math.min(1, Math.max(0, (now - state.transition.startedAt) / state.transition.duration));
+  }
+
+  function displayPosition(node, now = performance.now()) {
+    if (!state.transition) return state.layoutPositions.get(node.id) || node;
+    const progress = easeOutCubic(transitionProgress(now));
+    const from = state.transition.fromPositions.get(node.id) || node;
+    const to = state.transition.toPositions.get(node.id) || node;
+    return {
+      x: from.x + (to.x - from.x) * progress,
+      y: from.y + (to.y - from.y) * progress,
+    };
+  }
+
+  function displayTransform(now = performance.now()) {
+    if (!state.transition) return state.transform;
+    const progress = easeOutCubic(transitionProgress(now));
+    const from = state.transition.fromTransform;
+    const to = state.transition.toTransform;
+    return {
+      k: from.k + (to.k - from.k) * progress,
+      x: from.x + (to.x - from.x) * progress,
+      y: from.y + (to.y - from.y) * progress,
+    };
+  }
+
+  function settleTransition(now = performance.now()) {
+    if (!state.transition) return;
+    state.layoutPositions = new Map(
+      (state.filtered?.nodes || []).map((node) => [node.id, displayPosition(node, now)]),
+    );
+    state.transform = displayTransform(now);
+    state.transition = null;
+  }
+
+  function beginTransition(toPositions, toTransform, { animate = true } = {}) {
+    const now = performance.now();
+    const fromPositions = new Map(
+      (state.filtered?.nodes || []).map((node) => [node.id, displayPosition(node, now)]),
+    );
+    const fromTransform = displayTransform(now);
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!animate || reducedMotion) {
+      state.layoutPositions = toPositions;
+      state.transform = toTransform;
+      state.transition = null;
+      requestRender();
+      return;
+    }
+    state.transition = {
+      fromPositions,
+      toPositions,
+      fromTransform,
+      toTransform,
+      startedAt: now,
+      duration: 480,
+    };
+    requestRender();
+  }
+
+  function fittedTransform(nodes, { maximumScale = 720, positions = state.layoutPositions } = {}) {
+    if (!nodes?.length || !state.width || !state.height) return null;
     const viewport = effectiveViewport();
-    const minX = Math.min(...nodes.map((node) => node.x));
-    const maxX = Math.max(...nodes.map((node) => node.x));
-    const minY = Math.min(...nodes.map((node) => node.y));
-    const maxY = Math.max(...nodes.map((node) => node.y));
+    const coordinates = nodes.map((node) => positions.get(node.id) || node);
+    const minX = Math.min(...coordinates.map((node) => node.x));
+    const maxX = Math.max(...coordinates.map((node) => node.x));
+    const minY = Math.min(...coordinates.map((node) => node.y));
+    const maxY = Math.max(...coordinates.map((node) => node.y));
     const spanX = Math.max(0.18, maxX - minX);
     const spanY = Math.max(0.14, maxY - minY);
     const availableWidth = Math.max(120, viewport.right - viewport.left);
@@ -281,34 +350,58 @@
     );
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
-    state.transform = {
+    return {
       k: scale,
       x: viewport.left + availableWidth / 2 - centerX * scale,
       y: viewport.top + availableHeight / 2 - centerY * scale,
     };
-    requestRender();
   }
 
-  function fitVisible() {
-    fitNodes(state.filtered?.nodes || []);
+  function fitNodes(
+    nodes,
+    { maximumScale = 720, positions = state.layoutPositions, animate = false } = {},
+  ) {
+    const transform = fittedTransform(nodes, { maximumScale, positions });
+    if (!transform) return;
+    beginTransition(positions, transform, { animate });
   }
 
-  function focusSelected() {
+  function fitVisible({ animate = false } = {}) {
+    fitNodes(state.filtered?.nodes || [], { animate });
+  }
+
+  function focusSelected({ animate = false } = {}) {
     const selectedId = state.view.selectedId;
     if (!selectedId) return;
     const selected = state.filtered.nodeById.get(selectedId) || state.graph.nodeById.get(selectedId);
     if (!selected) return;
     const connections = core.connectionsForNode(state.filtered, selectedId);
+    const positions = core.selectionLayout(state.filtered, selectedId);
     const nodes = [
       selected,
       ...connections
         .map((connection) => state.filtered.nodeById.get(connection.collaboratorId))
         .filter(Boolean),
     ];
-    fitNodes(nodes, { maximumScale: connections.length ? 560 : 420 });
+    fitNodes(nodes, {
+      maximumScale: connections.length ? 560 : 420,
+      positions,
+      animate,
+    });
+  }
+
+  function refitCurrent({ animate = false } = {}) {
+    if (state.view?.selectedId) focusSelected({ animate });
+    else {
+      fitNodes(state.filtered?.nodes || [], {
+        positions: new Map(),
+        animate,
+      });
+    }
   }
 
   function zoomAt(factor, x = state.width / 2, y = state.height / 2) {
+    settleTransition();
     const oldScale = state.transform.k;
     const nextScale = Math.min(1400, Math.max(40, oldScale * factor));
     const actualFactor = nextScale / oldScale;
@@ -318,10 +411,11 @@
     requestRender();
   }
 
-  function worldToScreen(node) {
+  function worldToScreen(node, now = performance.now(), transform = displayTransform(now)) {
+    const position = displayPosition(node, now);
     return {
-      x: state.transform.x + node.x * state.transform.k,
-      y: state.transform.y + node.y * state.transform.k,
+      x: transform.x + position.x * transform.k,
+      y: transform.y + position.y * transform.k,
     };
   }
 
@@ -346,17 +440,20 @@
     elements.canvas.width = Math.round(state.width * state.dpr);
     elements.canvas.height = Math.round(state.height * state.dpr);
     context.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
-    if (state.filtered) fitVisible();
+    if (state.filtered) {
+      settleTransition();
+      refitCurrent();
+    }
     else requestRender();
   }
 
-  function drawGrid() {
+  function drawGrid(transform) {
     context.fillStyle = css("--canvas");
     context.fillRect(0, 0, state.width, state.height);
     context.fillStyle = css("--canvas-grid");
-    const spacing = Math.max(34, Math.min(58, state.transform.k / 5));
-    const startX = ((state.transform.x % spacing) + spacing) % spacing;
-    const startY = ((state.transform.y % spacing) + spacing) % spacing;
+    const spacing = Math.max(34, Math.min(58, transform.k / 5));
+    const startX = ((transform.x % spacing) + spacing) % spacing;
+    const startY = ((transform.y % spacing) + spacing) % spacing;
     for (let x = startX; x < state.width; x += spacing) {
       for (let y = startY; y < state.height; y += spacing) {
         context.beginPath();
@@ -367,7 +464,14 @@
   }
 
   function renderGraph() {
-    drawGrid();
+    const now = performance.now();
+    if (state.transition && transitionProgress(now) >= 1) {
+      state.layoutPositions = state.transition.toPositions;
+      state.transform = state.transition.toTransform;
+      state.transition = null;
+    }
+    const transform = displayTransform(now);
+    drawGrid(transform);
     if (!state.filtered) return;
     const selectedId = state.view.selectedId;
     const emphasisId = selectedId || state.hoveredId;
@@ -383,14 +487,14 @@
       const source = state.filtered.nodeById.get(edge.source);
       const target = state.filtered.nodeById.get(edge.target);
       if (!source || !target) continue;
-      const sourcePoint = worldToScreen(source);
-      const targetPoint = worldToScreen(target);
+      const sourcePoint = worldToScreen(source, now, transform);
+      const targetPoint = worldToScreen(target, now, transform);
       const highlighted =
         !emphasisId || edge.source === emphasisId || edge.target === emphasisId;
       const ratio = Math.log1p(edge.count) / Math.log1p(state.filtered.maximumEdgeCount);
       context.globalAlpha = emphasisId ? (highlighted ? 0.9 : 0.075) : 0.35 + ratio * 0.28;
       context.strokeStyle = highlighted && emphasisId ? css("--accent") : css("--canvas-edge-strong");
-      context.lineWidth = 0.65 + ratio * 3.5;
+      context.lineWidth = 0.65 + Math.pow(ratio, 1.65) * 7;
       context.beginPath();
       context.moveTo(sourcePoint.x, sourcePoint.y);
       context.lineTo(targetPoint.x, targetPoint.y);
@@ -400,12 +504,25 @@
     const ranked = [...state.filtered.nodes]
       .filter((node) => node.degree > 0)
       .sort((left, right) => right.strength - left.strength || right.degree - left.degree);
-    const labelIds = new Set(ranked.slice(0, state.transform.k > 500 ? 14 : 8).map((node) => node.id));
-    if (selectedId) labelIds.add(selectedId);
+    let labelIds;
+    if (selectedId) {
+      const compact = window.matchMedia("(max-width: 820px)").matches;
+      const connections = core.connectionsForNode(state.filtered, selectedId);
+      labelIds = new Set([
+        selectedId,
+        ...connections
+          .slice(0, compact ? 8 : connections.length)
+          .map((connection) => connection.collaboratorId),
+      ]);
+    } else {
+      labelIds = new Set(
+        ranked.slice(0, transform.k > 500 ? 14 : 8).map((node) => node.id),
+      );
+    }
     if (state.hoveredId) labelIds.add(state.hoveredId);
 
     for (const node of state.filtered.nodes) {
-      const point = worldToScreen(node);
+      const point = worldToScreen(node, now, transform);
       if (point.x < -20 || point.x > state.width + 20 || point.y < -20 || point.y > state.height + 20) {
         continue;
       }
@@ -436,8 +553,15 @@
         return rightPriority - leftPriority || right.strength - left.strength;
       });
     for (const node of nodesForLabels) {
-      drawNodeLabel(node, occupied, node.id === selectedId || node.id === state.hoveredId);
+      drawNodeLabel(
+        node,
+        occupied,
+        node.id === selectedId || node.id === state.hoveredId,
+        now,
+        transform,
+      );
     }
+    if (state.transition) requestRender();
   }
 
   function colorWithAlpha(color, alpha) {
@@ -449,15 +573,21 @@
     return color;
   }
 
-  function drawNodeLabel(node, occupied, force) {
-    const point = worldToScreen(node);
+  function drawNodeLabel(node, occupied, force, now, transform) {
+    const point = worldToScreen(node, now, transform);
     context.font = "600 11px Inter, ui-sans-serif, system-ui, sans-serif";
     const width = Math.ceil(context.measureText(node.name).width) + 13;
     const height = 22;
     const radius = nodeRadius(node);
+    const selected = state.view.selectedId
+      ? state.filtered.nodeById.get(state.view.selectedId)
+      : null;
+    const selectedPoint = selected ? worldToScreen(selected, now, transform) : null;
+    const placeLeft = selectedPoint && node.id !== selected.id && point.x < selectedPoint.x;
+    const desiredX = placeLeft ? point.x - radius - width - 5 : point.x + radius + 5;
     const rect = {
-      x: point.x + radius + 5,
-      y: point.y - height / 2,
+      x: Math.max(8, Math.min(state.width - width - 8, desiredX)),
+      y: Math.max(8, Math.min(state.height - height - 8, point.y - height / 2)),
       width,
       height,
     };
@@ -501,8 +631,10 @@
   function hitTest(x, y) {
     let closest = null;
     let closestDistance = Infinity;
+    const now = performance.now();
+    const transform = displayTransform(now);
     for (const node of state.filtered?.nodes || []) {
-      const point = worldToScreen(node);
+      const point = worldToScreen(node, now, transform);
       const distance = Math.hypot(point.x - x, point.y - y);
       const hitRadius = Math.max(10, nodeRadius(node) + 4);
       if (distance <= hitRadius && distance < closestDistance) {
@@ -564,9 +696,8 @@
     if (!state.graph.nodeById.has(nodeId)) return;
     state.view.selectedId = state.view.selectedId === nodeId && !focus ? "" : nodeId;
     state.expandedEdgeId = "";
-    applyView();
+    applyView({ fit: true, animate: true });
     if (state.view.selectedId) {
-      focusSelected();
       if (openDetails && window.matchMedia("(max-width: 820px)").matches) {
         openMobilePanel("detail");
       }
@@ -830,10 +961,11 @@
       if (!state.graph) return;
       state.view = core.stateFromSearch(window.location.search, state.graph);
       syncControls();
-      applyView({ fit: true, updateUrl: false });
+      applyView({ fit: true, updateUrl: false, animate: true });
     });
 
     elements.canvas.addEventListener("pointerdown", (event) => {
+      settleTransition();
       const point = canvasPoint(event);
       state.drag = {
         pointerId: event.pointerId,
@@ -895,7 +1027,7 @@
       const step = event.shiftKey ? 80 : 32;
       if (event.key === "+" || event.key === "=") zoomAt(1.22);
       else if (event.key === "-") zoomAt(1 / 1.22);
-      else if (event.key === "0" || event.key === "Home") fitVisible();
+      else if (event.key === "0" || event.key === "Home") refitCurrent({ animate: true });
       else if (event.key === "ArrowLeft") state.transform.x += step;
       else if (event.key === "ArrowRight") state.transform.x -= step;
       else if (event.key === "ArrowUp") state.transform.y += step;
@@ -938,14 +1070,14 @@
       state.view.departments = [...elements.departmentOptions.querySelectorAll("input:checked")].map(
         (input) => input.value,
       );
-      applyView({ fit: true });
+      applyView({ fit: true, animate: true });
     });
     elements.departmentLegend.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-department-id]");
       if (!button) return;
       state.view.departments = [button.dataset.departmentId];
       syncControls();
-      applyView({ fit: true });
+      applyView({ fit: true, animate: true });
       if (window.matchMedia("(max-width: 820px)").matches) openMobilePanel("legend");
     });
     elements.yearMin.addEventListener("change", readYears);
@@ -959,7 +1091,7 @@
             : Math.max(state.graph.years.minimum, state.graph.years.maximum - Number(preset) + 1);
         state.view.toYear = state.graph.years.maximum;
         syncControls();
-        applyView({ fit: true });
+        applyView({ fit: true, animate: true });
       });
     });
     elements.strength.addEventListener("input", () => {
@@ -967,15 +1099,15 @@
       elements.strengthOutput.textContent = `${state.view.minimum}+ shared ${
         state.view.minimum === 1 ? "work" : "works"
       }`;
-      applyView();
+      applyView({ fit: true, animate: true });
     });
     elements.crossDepartment.addEventListener("change", () => {
       state.view.crossDepartment = elements.crossDepartment.checked;
-      applyView({ fit: true });
+      applyView({ fit: true, animate: true });
     });
     elements.showUnconnected.addEventListener("change", () => {
       state.view.showUnconnected = elements.showUnconnected.checked;
-      applyView({ fit: true });
+      applyView({ fit: true, animate: true });
     });
     elements.detailContent.addEventListener("click", (event) => {
       const button = event.target.closest("button[data-edge-id]");
@@ -986,9 +1118,9 @@
     });
 
     elements.clear.addEventListener("click", resetFilters);
-    elements.fit.addEventListener("click", fitVisible);
+    elements.fit.addEventListener("click", () => refitCurrent({ animate: true }));
     elements.reset.addEventListener("click", resetFilters);
-    elements.zoomFit.addEventListener("click", fitVisible);
+    elements.zoomFit.addEventListener("click", () => refitCurrent({ animate: true }));
     elements.zoomIn.addEventListener("click", () => zoomAt(1.24));
     elements.zoomOut.addEventListener("click", () => zoomAt(1 / 1.24));
     elements.copy.addEventListener("click", async () => {

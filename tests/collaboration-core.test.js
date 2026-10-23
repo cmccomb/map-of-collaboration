@@ -178,6 +178,22 @@ test("faculty search considers names and departments", () => {
   );
 });
 
+test("selection layout centers an ego network without moving unrelated faculty", () => {
+  const graph = core.parseGraph(fixture());
+  const filtered = core.filterGraph(graph, core.defaultState(graph));
+  const positions = core.selectionLayout(filtered, "b");
+
+  assert.deepEqual(positions.get("b"), { x: 0, y: 0 });
+  assert.equal(positions.has("a"), true);
+  assert.equal(positions.has("c"), true);
+  assert.equal(positions.size, 3);
+  for (const id of ["a", "c"]) {
+    const position = positions.get(id);
+    assert.ok(Math.abs(Math.hypot(position.x, position.y) - 0.26) < 1e-9);
+  }
+  assert.deepEqual(core.selectionLayout(filtered, "missing"), new Map());
+});
+
 test("URLs are sanitized and CSV output is escaped", () => {
   assert.equal(core.safeExternalUrl("javascript:alert(1)"), "");
   assert.equal(core.safeExternalUrl("https://example.com/a"), "https://example.com/a");
