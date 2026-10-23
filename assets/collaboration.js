@@ -542,8 +542,28 @@
           .map((connection) => connection.collaboratorId),
       ]);
     } else {
+      const viewport = effectiveViewport();
+      const viewportArea =
+        Math.max(1, viewport.right - viewport.left) *
+        Math.max(1, viewport.bottom - viewport.top);
+      const labelLimit = Math.max(
+        8,
+        Math.floor(
+          viewportArea /
+            (window.matchMedia("(max-width: 820px)").matches ? 52000 : 30000),
+        ),
+      );
+      const visibleRanked = ranked.filter((node) => {
+        const point = worldToScreen(node, now, transform);
+        return (
+          point.x >= viewport.left - 12 &&
+          point.x <= viewport.right + 12 &&
+          point.y >= viewport.top - 12 &&
+          point.y <= viewport.bottom + 12
+        );
+      });
       labelIds = new Set(
-        ranked.slice(0, transform.k > 500 ? 14 : 8).map((node) => node.id),
+        visibleRanked.slice(0, labelLimit).map((node) => node.id),
       );
     }
     if (state.hoveredId) labelIds.add(state.hoveredId);
@@ -611,10 +631,7 @@
       : null;
     const selectedPoint = selected ? worldToScreen(selected, now, transform) : null;
     const placeLeft = selectedPoint && node.id !== selected.id && point.x < selectedPoint.x;
-    const desiredX = placeLeft ? point.x - radius - width - 5 : point.x + radius + 5;
-    const viewport = selected
-      ? effectiveViewport()
-      : { left: 0, right: state.width, top: 0, bottom: state.height };
+    const viewport = effectiveViewport();
     const minimumX = Math.max(8, viewport.left + 6);
     const maximumX = Math.max(
       minimumX,
@@ -625,24 +642,30 @@
       minimumY,
       Math.min(state.height - height - 8, viewport.bottom - height - 6),
     );
-    const rect = {
-      x: Math.max(minimumX, Math.min(maximumX, desiredX)),
-      y: Math.max(minimumY, Math.min(maximumY, point.y - height / 2)),
+    const clampRect = ({ x, y }) => ({
+      x: Math.max(minimumX, Math.min(maximumX, x)),
+      y: Math.max(minimumY, Math.min(maximumY, y)),
       width,
       height,
-    };
-    if (
-      !force &&
+    });
+    const overlaps = (rect) =>
       occupied.some(
         (other) =>
           rect.x < other.x + other.width + 3 &&
           rect.x + rect.width + 3 > other.x &&
           rect.y < other.y + other.height + 3 &&
           rect.y + rect.height + 3 > other.y,
-      )
-    ) {
-      return;
-    }
+      );
+    const right = { x: point.x + radius + 5, y: point.y - height / 2 };
+    const left = { x: point.x - radius - width - 5, y: point.y - height / 2 };
+    const candidates = [
+      placeLeft ? left : right,
+      placeLeft ? right : left,
+      { x: point.x - width / 2, y: point.y - radius - height - 5 },
+      { x: point.x - width / 2, y: point.y + radius + 5 },
+    ].map(clampRect);
+    const rect = force ? candidates[0] : candidates.find((candidate) => !overlaps(candidate));
+    if (!rect) return;
     occupied.push(rect);
     context.globalAlpha = force ? 0.98 : 0.86;
     context.fillStyle = css("--tooltip");
