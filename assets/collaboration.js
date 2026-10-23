@@ -585,9 +585,22 @@
     const selectedPoint = selected ? worldToScreen(selected, now, transform) : null;
     const placeLeft = selectedPoint && node.id !== selected.id && point.x < selectedPoint.x;
     const desiredX = placeLeft ? point.x - radius - width - 5 : point.x + radius + 5;
+    const viewport = selected
+      ? effectiveViewport()
+      : { left: 0, right: state.width, top: 0, bottom: state.height };
+    const minimumX = Math.max(8, viewport.left + 6);
+    const maximumX = Math.max(
+      minimumX,
+      Math.min(state.width - width - 8, viewport.right - width - 6),
+    );
+    const minimumY = Math.max(8, viewport.top + 6);
+    const maximumY = Math.max(
+      minimumY,
+      Math.min(state.height - height - 8, viewport.bottom - height - 6),
+    );
     const rect = {
-      x: Math.max(8, Math.min(state.width - width - 8, desiredX)),
-      y: Math.max(8, Math.min(state.height - height - 8, point.y - height / 2)),
+      x: Math.max(minimumX, Math.min(maximumX, desiredX)),
+      y: Math.max(minimumY, Math.min(maximumY, point.y - height / 2)),
       width,
       height,
     };
