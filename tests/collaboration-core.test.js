@@ -194,6 +194,42 @@ test("selection layout centers an ego network without moving unrelated faculty",
   assert.deepEqual(core.selectionLayout(filtered, "missing"), new Map());
 });
 
+test("collaboration layout is deterministic and returns finite positions", () => {
+  const graph = core.parseGraph(fixture());
+  const filtered = core.filterGraph(graph, core.defaultState(graph));
+  const first = core.collaborationLayout(filtered);
+  const second = core.collaborationLayout(filtered);
+
+  assert.deepEqual(first, second);
+  assert.equal(first.size, filtered.nodes.length);
+  for (const position of first.values()) {
+    assert.equal(Number.isFinite(position.x), true);
+    assert.equal(Number.isFinite(position.y), true);
+  }
+});
+
+test("collaboration layout removes a simple pair of crossing connections", () => {
+  const nodes = [
+    { id: "a", x: -1, y: -1, degree: 1, strength: 1 },
+    { id: "b", x: 1, y: 1, degree: 1, strength: 1 },
+    { id: "c", x: -1, y: 1, degree: 1, strength: 1 },
+    { id: "d", x: 1, y: -1, degree: 1, strength: 1 },
+  ];
+  const edges = [
+    { source: "a", target: "b", count: 1 },
+    { source: "c", target: "d", count: 1 },
+  ];
+  const sourcePositions = new Map(nodes.map((node) => [node.id, node]));
+  const filtered = {
+    nodes,
+    edges,
+    nodeById: new Map(nodes.map((node) => [node.id, node])),
+  };
+
+  assert.equal(core.edgeCrossingCount(edges, sourcePositions), 1);
+  assert.equal(core.edgeCrossingCount(edges, core.collaborationLayout(filtered)), 0);
+});
+
 test("URLs are sanitized and CSV output is escaped", () => {
   assert.equal(core.safeExternalUrl("javascript:alert(1)"), "");
   assert.equal(core.safeExternalUrl("https://example.com/a"), "https://example.com/a");

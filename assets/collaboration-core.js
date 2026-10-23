@@ -344,6 +344,191 @@
       );
   }
 
+  function layoutHash(value) {
+    let hash = 2166136261;
+    for (const character of String(value)) {
+      hash ^= character.codePointAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0) / 4294967295;
+  }
+
+  function layoutSeed(nodes, variant) {
+    const positions = new Map();
+    if (variant !== "source") {
+      const seedNumber = Number(String(variant).replace("radial-", "")) || 0;
+      const ordered = [...nodes].sort((left, right) => {
+        if (seedNumber === 0) {
+          return (
+            right.degree - left.degree ||
+            right.strength - left.strength ||
+            left.id.localeCompare(right.id)
+          );
+        }
+        return (
+          layoutHash(`${seedNumber}|${left.id}`) - layoutHash(`${seedNumber}|${right.id}`) ||
+          left.id.localeCompare(right.id)
+        );
+      });
+      const goldenAngle = Math.PI * (3 - Math.sqrt(5));
+      ordered.forEach((node, index) => {
+        const radius = Math.sqrt((index + 0.35) / Math.max(1, ordered.length));
+        const angle =
+          index * goldenAngle + layoutHash(`${seedNumber + 17}|${node.id}`) * 0.08;
+        positions.set(node.id, {
+          x: Math.cos(angle) * radius,
+          y: Math.sin(angle) * radius,
+        });
+      });
+      return positions;
+    }
+
+    const minX = Math.min(...nodes.map((node) => node.x));
+    const maxX = Math.max(...nodes.map((node) => node.x));
+    const minY = Math.min(...nodes.map((node) => node.y));
+    const maxY = Math.max(...nodes.map((node) => node.y));
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const span = Math.max(0.01, maxX - minX, maxY - minY);
+    nodes.forEach((node) => {
+      const angle = layoutHash(node.id) * Math.PI * 2;
+      positions.set(node.id, {
+        x: ((node.x - centerX) / span) * 1.7 + Math.cos(angle) * 0.006,
+        y: ((node.y - centerY) / span) * 1.7 + Math.sin(angle) * 0.006,
+      });
+    });
+    return positions;
+  }
+
+  function simulateLayout(filtered, seed) {
+    const nodes = filtered.nodes;
+    const nodeIndex = new Map(nodes.map((node, index) => [node.id, index]));
+    const x = nodes.map((node) => seed.get(node.id).x);
+    const y = nodes.map((node) => seed.get(node.id).y);
+    const dx = new Float64Array(nodes.length);
+    const dy = new Float64Array(nodes.length);
+    const edgePairs = filtered.edges
+      .map((edge) => ({
+        source: nodeIndex.get(edge.source),
+        target: nodeIndex.get(edge.target),
+        weight: 0.82 + Math.log1p(edge.count || 1) * 0.16,
+      }))
+      .filter((edge) => edge.source !== undefined && edge.target !== undefined);
+    const spacing = Math.max(0.12, 2.25 / Math.sqrt(Math.max(1, nodes.length)));
+    const iterations = nodes.length <= 55 ? 220 : nodes.length <= 140 ? 165 : 115;
+
+    for (let iteration = 0; iteration < iterations; iteration += 1) {
+      dx.fill(0);
+      dy.fill(0);
+
+      for (let left = 0; left < nodes.length; left += 1) {
+        for (let right = left + 1; right < nodes.length; right += 1) {
+          let deltaX = x[left] - x[right];
+          let deltaY = y[left] - y[right];
+          let distance = Math.hypot(deltaX, deltaY);
+          if (distance < 0.0001) {
+            const angle = layoutHash(`${nodes[left].id}|${nodes[right].id}`) * Math.PI * 2;
+            deltaX = Math.cos(angle) * 0.0001;
+            deltaY = Math.sin(angle) * 0.0001;
+            distance = 0.0001;
+          }
+          const force = (spacing * spacing) / distance;
+          const forceX = (deltaX / distance) * force;
+          const forceY = (deltaY / distance) * force;
+          dx[left] += forceX;
+          dy[left] += forceY;
+          dx[right] -= forceX;
+          dy[right] -= forceY;
+        }
+      }
+
+      for (const edge of edgePairs) {
+        const deltaX = x[edge.source] - x[edge.target];
+        const deltaY = y[edge.source] - y[edge.target];
+        const distance = Math.max(0.0001, Math.hypot(deltaX, deltaY));
+        const force = ((distance * distance) / spacing) * edge.weight;
+        const forceX = (deltaX / distance) * force;
+        const forceY = (deltaY / distance) * force;
+        dx[edge.source] -= forceX;
+        dy[edge.source] -= forceY;
+        dx[edge.target] += forceX;
+        dy[edge.target] += forceY;
+      }
+
+      const progress = iteration / Math.max(1, iterations - 1);
+      const temperature = 0.17 * Math.pow(1 - progress, 1.55) + 0.002;
+      for (let index = 0; index < nodes.length; index += 1) {
+        dx[index] -= x[index] * 0.12;
+        dy[index] -= y[index] * 0.12;
+        const displacement = Math.max(0.0001, Math.hypot(dx[index], dy[index]));
+        x[index] += (dx[index] / displacement) * Math.min(displacement, temperature);
+        y[index] += (dy[index] / displacement) * Math.min(displacement, temperature);
+      }
+    }
+
+    const positions = new Map();
+    const centerX = x.reduce((sum, value) => sum + value, 0) / Math.max(1, x.length);
+    const centerY = y.reduce((sum, value) => sum + value, 0) / Math.max(1, y.length);
+    nodes.forEach((node, index) => {
+      positions.set(node.id, { x: x[index] - centerX, y: y[index] - centerY });
+    });
+    return positions;
+  }
+
+  function edgeCrossingCount(edges, positions) {
+    const orientation = (a, b, c) =>
+      (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    let count = 0;
+    for (let left = 0; left < edges.length; left += 1) {
+      const first = edges[left];
+      const firstSource = positions.get(first.source);
+      const firstTarget = positions.get(first.target);
+      if (!firstSource || !firstTarget) continue;
+      for (let right = left + 1; right < edges.length; right += 1) {
+        const second = edges[right];
+        if (
+          first.source === second.source ||
+          first.source === second.target ||
+          first.target === second.source ||
+          first.target === second.target
+        ) {
+          continue;
+        }
+        const secondSource = positions.get(second.source);
+        const secondTarget = positions.get(second.target);
+        if (!secondSource || !secondTarget) continue;
+        const one = orientation(firstSource, firstTarget, secondSource);
+        const two = orientation(firstSource, firstTarget, secondTarget);
+        const three = orientation(secondSource, secondTarget, firstSource);
+        const four = orientation(secondSource, secondTarget, firstTarget);
+        if (one * two < -1e-10 && three * four < -1e-10) count += 1;
+      }
+    }
+    return count;
+  }
+
+  function collaborationLayout(filtered) {
+    if (!filtered?.nodes?.length) return new Map();
+    if (filtered.nodes.length === 1) {
+      return new Map([[filtered.nodes[0].id, { x: 0, y: 0 }]]);
+    }
+
+    const variants =
+      filtered.nodes.length <= 90
+        ? ["radial-0", "radial-1", "radial-2", "radial-3", "radial-4", "radial-5", "source"]
+        : ["radial-0"];
+    const candidates = variants
+      .map((variant) => {
+        const positions = simulateLayout(filtered, layoutSeed(filtered.nodes, variant));
+        return {
+          positions,
+          crossings: edgeCrossingCount(filtered.edges, positions),
+        };
+      })
+      .sort((left, right) => left.crossings - right.crossings);
+    return candidates[0].positions;
+  }
+
   function selectionLayout(filtered, nodeId) {
     const selected = filtered.nodeById.get(nodeId);
     if (!selected) return new Map();
@@ -430,10 +615,12 @@
 
   return Object.freeze({
     GRAPH_SCHEMA_VERSION,
+    collaborationLayout,
     connectionsForNode,
     defaultState,
     doiUrl,
     edgeKey,
+    edgeCrossingCount,
     edgesToCsv,
     facultyMatches,
     filterGraph,

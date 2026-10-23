@@ -390,11 +390,38 @@
     });
   }
 
+  function spreadOverviewLayout(positions) {
+    if (positions.size < 2) return positions;
+    const coordinates = [...positions.values()];
+    const minX = Math.min(...coordinates.map((point) => point.x));
+    const maxX = Math.max(...coordinates.map((point) => point.x));
+    const minY = Math.min(...coordinates.map((point) => point.y));
+    const maxY = Math.max(...coordinates.map((point) => point.y));
+    const graphAspect = Math.max(0.01, maxX - minX) / Math.max(0.01, maxY - minY);
+    const viewport = effectiveViewport();
+    const viewportAspect =
+      Math.max(1, viewport.right - viewport.left) /
+      Math.max(1, viewport.bottom - viewport.top);
+    const horizontalStretch = Math.min(
+      1.7,
+      Math.max(1, (viewportAspect * 0.88) / graphAspect),
+    );
+    if (horizontalStretch === 1) return positions;
+    const centerX = (minX + maxX) / 2;
+    return new Map(
+      [...positions].map(([id, point]) => [
+        id,
+        { x: centerX + (point.x - centerX) * horizontalStretch, y: point.y },
+      ]),
+    );
+  }
+
   function refitCurrent({ animate = false } = {}) {
     if (state.view?.selectedId) focusSelected({ animate });
     else {
+      const positions = spreadOverviewLayout(core.collaborationLayout(state.filtered));
       fitNodes(state.filtered?.nodes || [], {
-        positions: new Map(),
+        positions,
         animate,
       });
     }
