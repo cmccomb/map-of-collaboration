@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#0a141e" />
+    <meta
+      name="description"
+      content="Explore observed publication collaborations among CMU Engineering faculty."
+    />
+    <title>CMU Engineering Collaborations</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <script src="assets/theme.js"></script>
+    <link rel="stylesheet" href="assets/collaboration.css" />
+    <script src="assets/collaboration-core.js" defer></script>
+    <script src="assets/collaboration.js" defer></script>
+  </head>
+  <body>
+    <main class="workspace">
+      <nav class="mobile-toolbar" aria-label="Graph panels">
+        <span class="mobile-brand">CMU graph</span>
+        <button
+          id="toggle-filters"
+          type="button"
+          aria-controls="filter-panel"
+          aria-expanded="false"
+          disabled
+        >
+          Settings
+        </button>
+        <button
+          id="toggle-legend"
+          type="button"
+          aria-controls="legend-panel"
+          aria-expanded="false"
+          disabled
+        >
+          Key
+        </button>
+        <button
+          id="toggle-details"
+          type="button"
+          aria-controls="detail-panel"
+          aria-expanded="false"
+          disabled
+        >
+          Details
+        </button>
+      </nav>
+
+      <aside
+        id="filter-panel"
+        class="filter-panel"
+        aria-label="Collaboration graph settings"
+        aria-busy="true"
+      >
+        <section class="panel-intro" aria-labelledby="graph-title">
+          <p class="eyebrow">College of Engineering</p>
+          <h1 id="graph-title">Faculty Collaboration at CMU</h1>
+          <p class="dek">
+            Each line is an observed coauthorship. Thicker lines represent more
+            shared publications.
+          </p>
+          <p id="graph-status" class="status" role="status" aria-live="polite">
+            Loading the collaboration graph…
+          </p>
+          <div class="intro-links">
+            <a
+              href="https://cmccomb.com/map-of-eng/"
+              aria-label="Open the CMU Engineering research map"
+              >Research map <span aria-hidden="true">↗</span></a
+            >
+            <a
+              href="https://huggingface.co/datasets/ccm/cmu-engineering-publications"
+              aria-label="Open the full CMU Engineering publication dataset"
+              >Dataset <span aria-hidden="true">↗</span></a
+            >
+          </div>
+          <fieldset class="appearance-fieldset">
+            <legend>Appearance</legend>
+            <div class="theme-control">
+              <label>
+                <input type="radio" name="appearance-mode" value="light" />
+                <span>Light</span>
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="appearance-mode"
+                  value="system"
+                  checked
+                />
+                <span>System</span>
+              </label>
+              <label>
+                <input type="radio" name="appearance-mode" value="dark" />
+                <span>Dark</span>
+              </label>
+            </div>
+          </fieldset>
+          <button id="retry-load" class="secondary-button" type="button" hidden>
+            Retry loading the graph
+          </button>
+        </section>
+
+        <div id="filter-controls" class="filter-controls" inert>
+          <div class="panel-heading">
+            <div>
+              <h2>Explore connections</h2>
+              <p>Filters update the network and its evidence.</p>
+            </div>
+            <button id="clear-filters" class="text-button" type="button">
+              Clear
+            </button>
+          </div>
+
+          <div class="faculty-field">
+            <label class="field" for="faculty-search">
+              <span>Find a faculty member</span>
+              <input
+                id="faculty-search"
+                type="search"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-controls="faculty-suggestions"
+                aria-expanded="false"
+                autocomplete="off"
+                placeholder="Search 312 faculty"
+              />
+            </label>
+            <ul
+              id="faculty-suggestions"
+              class="suggestions"
+              role="listbox"
+              hidden
+            ></ul>
+          </div>
+
+          <fieldset class="department-fieldset">
+            <legend>Departments and programs</legend>
+            <div id="department-options" class="department-options"></div>
+            <p class="field-note">Select any number; faculty with any selected affiliation remain.</p>
+          </fieldset>
+
+          <fieldset class="year-filter-fieldset">
+            <legend>Publication years</legend>
+            <div class="year-range-inputs">
+              <label>
+                <span>From</span>
+                <input id="year-min" type="number" inputmode="numeric" />
+              </label>
+              <span aria-hidden="true">–</span>
+              <label>
+                <span>Through</span>
+                <input id="year-max" type="number" inputmode="numeric" />
+              </label>
+            </div>
+            <div class="year-presets" aria-label="Publication year presets">
+              <button type="button" data-year-preset="5">Last 5</button>
+              <button type="button" data-year-preset="10">Last 10</button>
+              <button type="button" data-year-preset="all">All years</button>
+            </div>
+            <p id="undated-note" class="field-note"></p>
+          </fieldset>
+
+          <fieldset class="strength-fieldset">
+            <legend>
+              Connection strength
+              <output id="strength-output" for="strength-min">1+ shared work</output>
+            </legend>
+            <input id="strength-min" type="range" min="1" max="20" value="1" />
+            <div class="range-labels" aria-hidden="true">
+              <span>All observed</span>
+              <span>20+</span>
+            </div>
+          </fieldset>
+
+          <fieldset class="display-fieldset">
+            <legend>Display</legend>
+            <label class="check-row">
+              <input id="cross-department" type="checkbox" />
+              <span>
+                <strong>Cross-department only</strong>
+                <small>Hide pairs that share an affiliation</small>
+              </span>
+            </label>
+            <label class="check-row">
+              <input id="show-unconnected" type="checkbox" />
+              <span>
+                <strong>Show unconnected faculty</strong>
+                <small>Include cataloged people without a visible edge</small>
+              </span>
+            </label>
+          </fieldset>
+
+          <div class="filter-actions">
+            <button id="fit-graph" class="primary-button" type="button">
+              Fit visible graph
+            </button>
+            <button id="reset-view" class="secondary-button" type="button">
+              Reset view
+            </button>
+          </div>
+          <div class="secondary-actions">
+            <button id="copy-view" class="text-button" type="button">
+              Copy view link
+            </button>
+            <button id="download-csv" class="text-button" type="button">
+              Download links
+            </button>
+          </div>
+
+          <details class="method-note">
+            <summary>How to read this graph</summary>
+            <p>
+              Connections use stable faculty IDs attached to the same
+              deduplicated work in the map-of-eng source artifact. No topical
+              or institutional relationship is inferred.
+            </p>
+            <p id="coverage-note"></p>
+          </details>
+        </div>
+      </aside>
+
+      <section id="map-column" class="map-column" aria-busy="true">
+        <canvas
+          id="graph-canvas"
+          tabindex="0"
+          aria-label="Interactive CMU Engineering faculty collaboration graph"
+          aria-describedby="canvas-instructions"
+        ></canvas>
+        <p id="canvas-instructions" class="sr-only">
+          Drag to pan, use the mouse wheel or zoom buttons to zoom, and select a
+          faculty node to inspect its observed collaborators. Use faculty search
+          for a keyboard-accessible route to every person.
+        </p>
+        <div id="loading-state" class="loading-state" aria-hidden="true">
+          <span class="loading-mark"></span>
+          <span>Assembling collaborations</span>
+        </div>
+        <div id="graph-stats" class="graph-stats" aria-live="polite"></div>
+        <div class="zoom-controls" aria-label="Graph zoom controls">
+          <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+          <button id="zoom-out" type="button" aria-label="Zoom out">−</button>
+          <button id="zoom-fit" type="button" aria-label="Fit visible graph">⌂</button>
+        </div>
+      </section>
+
+      <aside id="legend-panel" class="legend-panel" aria-label="Department color key">
+        <div class="legend-heading">
+          <h2>Department color</h2>
+          <p>Primary affiliation</p>
+        </div>
+        <div id="department-legend" class="department-legend"></div>
+        <div class="edge-key">
+          <span class="edge-sample thin"></span><span>Fewer shared works</span>
+          <span class="edge-sample thick"></span><span>More shared works</span>
+        </div>
+      </aside>
+
+      <aside
+        id="detail-panel"
+        class="detail-panel"
+        aria-label="Selected faculty details"
+        aria-live="polite"
+      >
+        <div class="detail-empty">
+          <p class="eyebrow">Faculty details</p>
+          <h2>Select a node</h2>
+          <p>Choose a faculty member to inspect collaborators and shared works.</p>
+        </div>
+        <div id="detail-content" hidden></div>
+      </aside>
+
+      <div id="graph-tooltip" class="graph-tooltip" role="tooltip" hidden></div>
+      <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+    </main>
+
+    <noscript>
+      <p class="noscript">This interactive graph requires JavaScript.</p>
+    </noscript>
+  </body>
+</html>
