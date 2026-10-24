@@ -472,6 +472,7 @@
   }
 
   function facultyLabelEligible(node, selectedDepartmentIds = []) {
+    if (node?.kind === "external_coauthor") return true;
     const departments = uniqueStrings(node?.departments);
     const selectedDepartments = new Set(uniqueStrings(selectedDepartmentIds));
     if (!selectedDepartments.size) return departments.length === 1;

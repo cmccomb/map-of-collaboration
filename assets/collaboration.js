@@ -767,13 +767,14 @@
     if (isDepartmentLayout() && !selectedIds.size) {
       drawDepartmentLabels(occupied, now, transform);
     }
+    const labelPriority = (node) =>
+      selectedIds.has(node.id) ? 3
+        : node.id === state.hoveredId ? 2
+          : node.kind === "external_coauthor" ? 1 : 0;
     const nodesForLabels = state.filtered.nodes
       .filter((node) => labelIds.has(node.id))
-      .sort((left, right) => {
-        const leftPriority = selectedIds.has(left.id) ? 2 : left.id === state.hoveredId ? 1 : 0;
-        const rightPriority = selectedIds.has(right.id) ? 2 : right.id === state.hoveredId ? 1 : 0;
-        return rightPriority - leftPriority || right.strength - left.strength;
-      });
+      .sort((left, right) =>
+        labelPriority(right) - labelPriority(left) || right.strength - left.strength);
     for (const node of nodesForLabels) {
       drawNodeLabel(
         node,

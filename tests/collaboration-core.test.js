@@ -499,7 +499,7 @@ test("faculty search considers names and departments", () => {
   assert.equal(core.facultyMatches(graph, "One", 1).length, 1);
 });
 
-test("automatic labels stay within explicitly selected primary departments", () => {
+test("automatic labels keep department limits while admitting external coauthors", () => {
   assert.equal(core.departmentLabelEligible("one"), true);
   assert.equal(core.departmentLabelEligible("one", ["two"]), false);
   assert.equal(core.departmentLabelEligible("one", ["one", "two"]), true);
@@ -527,6 +527,14 @@ test("automatic labels stay within explicitly selected primary departments", () 
       { departments: ["one", "two"], primary_department: "one" },
       ["one"],
     ),
+    true,
+  );
+  assert.equal(
+    core.facultyLabelEligible({ kind: "external_coauthor", departments: [] }),
+    true,
+  );
+  assert.equal(
+    core.facultyLabelEligible({ kind: "external_coauthor", departments: [] }, ["two"]),
     true,
   );
 });
