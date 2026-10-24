@@ -240,6 +240,7 @@
       showUnconnected: false,
       layout: "collaboration",
       departmentSpacing: 3,
+      schoolSpacing: 0,
       selectedIds: [],
     };
   }
@@ -299,7 +300,10 @@
       layout: ["departments", "department-force"].includes(params.get("layout"))
         ? params.get("layout")
         : "collaboration",
-      departmentSpacing: clamp(integer(params.get("spacing"), 3), 1, 5),
+      departmentSpacing: clamp(integer(params.get("spacing"), 3), 1, 10),
+      schoolSpacing: graph.schools.length > 1
+        ? clamp(integer(params.get("school_spacing"), 0), 0, 10)
+        : 0,
       selectedIds,
     };
   }
@@ -321,8 +325,12 @@
     if (["departments", "department-force"].includes(state.layout)) {
       params.set("layout", state.layout);
     }
-    const departmentSpacing = clamp(integer(state.departmentSpacing, 3), 1, 5);
+    const departmentSpacing = clamp(integer(state.departmentSpacing, 3), 1, 10);
     if (departmentSpacing !== 3) params.set("spacing", String(departmentSpacing));
+    const schoolSpacing = clamp(integer(state.schoolSpacing, 0), 0, 10);
+    if (schoolSpacing && graph.schools.length > 1) {
+      params.set("school_spacing", String(schoolSpacing));
+    }
     const selectedIds = validFacultyIds(state.selectedIds || [], graph);
     if (selectedIds.length) {
       params.set("faculty", selectedIds.join(","));
@@ -554,7 +562,7 @@
   }
 
   function departmentSeparation(level) {
-    return [0, 1, 2, 3, 6, 12][clamp(integer(level, 3), 1, 5)];
+    return [0, 1, 2, 3, 6, 12, 20, 30, 43, 59, 78][clamp(integer(level, 3), 0, 10)];
   }
 
   function layoutSeed(nodes, variant) {
@@ -609,6 +617,7 @@
     seed,
     {
       departmentSpacing = 0,
+      schoolSpacing = 0,
       departmentAnchors = new Map(),
       departmentByNode = new Map(),
     } = {},
@@ -616,10 +625,33 @@
     const nodes = filtered.nodes;
     const departmental = departmentSpacing > 0;
     const openness = departmentSeparation(departmentSpacing);
+    const schoolOpenness = departmentSeparation(schoolSpacing);
     const nodeIndex = new Map(nodes.map((node, index) => [node.id, index]));
     const nodeDepartments = nodes.map(
       (node) => departmentByNode.get(node.id) || node.primary_department,
     );
+    const crossSchoolPairs = schoolOpenness > 0
+      ? new Uint8Array(nodes.length * nodes.length)
+      : null;
+    if (crossSchoolPairs) {
+      const schoolSets = nodes.map((node) => new Set(node.school_ids || []));
+      for (let left = 0; left < nodes.length; left += 1) {
+        if (!schoolSets[left].size) continue;
+        for (let right = left + 1; right < nodes.length; right += 1) {
+          if (!schoolSets[right].size) continue;
+          let sharedSchool = false;
+          for (const schoolId of schoolSets[left]) {
+            if (schoolSets[right].has(schoolId)) {
+              sharedSchool = true;
+              break;
+            }
+          }
+          if (sharedSchool) continue;
+          crossSchoolPairs[left * nodes.length + right] = 1;
+          crossSchoolPairs[right * nodes.length + left] = 1;
+        }
+      }
+    }
     const x = nodes.map((node) => seed.get(node.id).x);
     const y = nodes.map((node) => seed.get(node.id).y);
     const dx = new Float64Array(nodes.length);
@@ -636,6 +668,7 @@
             departmental && source !== undefined && target !== undefined
               ? nodeDepartments[source] !== nodeDepartments[target]
               : Boolean(edge.cross_department),
+          crossSchool: Boolean(crossSchoolPairs?.[source * nodes.length + target]),
         };
       })
       .filter((edge) => edge.source !== undefined && edge.target !== undefined);
@@ -659,8 +692,9 @@
             distance = 0.0001;
           }
           const differentDepartments = nodeDepartments[left] !== nodeDepartments[right];
-          const repulsionMultiplier =
-            departmental && differentDepartments ? 1 + openness * 0.22 : 1;
+          const repulsionMultiplier = 1
+            + (departmental && differentDepartments ? openness * 0.22 : 0)
+            + (crossSchoolPairs?.[left * nodes.length + right] ? schoolOpenness * 0.22 : 0);
           const force = ((spacing * spacing) / distance) * repulsionMultiplier;
           const forceX = (deltaX / distance) * force;
           const forceY = (deltaY / distance) * force;
@@ -675,9 +709,10 @@
         const deltaX = x[edge.source] - x[edge.target];
         const deltaY = y[edge.source] - y[edge.target];
         const distance = Math.max(0.0001, Math.hypot(deltaX, deltaY));
-        const targetDistance = edge.crossDepartment
+        const targetDistance = (edge.crossDepartment
           ? spacing * (2.2 + openness * 0.9)
-          : spacing * 0.9;
+          : spacing * 0.9)
+          + (edge.crossSchool ? spacing * schoolOpenness * 0.9 : 0);
         const force = departmental
           ? (distance - targetDistance) * edge.weight * (edge.crossDepartment ? 0.22 : 0.34)
           : ((distance * distance) / spacing) * edge.weight;
@@ -881,13 +916,15 @@
     graph,
     requestedSpacing = 3,
     selectedDepartmentIds = [],
+    requestedSchoolSpacing = 0,
   ) {
     if (!filtered?.nodes?.length) return new Map();
     if (filtered.nodes.length === 1) {
       return new Map([[filtered.nodes[0].id, { x: 0, y: 0 }]]);
     }
 
-    const spacingLevel = clamp(integer(requestedSpacing, 3), 1, 5);
+    const spacingLevel = clamp(integer(requestedSpacing, 3), 1, 10);
+    const schoolSpacingLevel = clamp(integer(requestedSchoolSpacing, 0), 0, 10);
     const openness = departmentSeparation(spacingLevel);
     const departmentByNode = new Map(
       filtered.nodes.map((node) => [node.id, layoutDepartmentId(node, selectedDepartmentIds)]),
@@ -934,6 +971,7 @@
 
     return simulateLayout(filtered, seed, {
       departmentSpacing: spacingLevel,
+      schoolSpacing: schoolSpacingLevel,
       departmentAnchors,
       departmentByNode,
     });

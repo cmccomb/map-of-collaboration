@@ -126,6 +126,14 @@ test("school filters preserve outward edges and legacy department links", () => 
   assert.deepEqual(state.schools, ["scs"]);
   assert.equal(state.crossSchool, true);
   assert.equal(core.stateToSearch(state, graph), "?schools=scs&cross_school=1");
+  const spaced = core.stateFromSearch("?schools=scs&layout=department-force&spacing=10&school_spacing=7", graph);
+  assert.equal(spaced.departmentSpacing, 10);
+  assert.equal(spaced.schoolSpacing, 7);
+  assert.equal(core.stateToSearch(spaced, graph),
+    "?schools=scs&layout=department-force&spacing=10&school_spacing=7");
+  assert.equal(core.stateFromSearch("?school_spacing=99", graph).schoolSpacing, 10);
+  assert.equal(core.stateFromSearch("?school_spacing=-5", graph).schoolSpacing, 0);
+  assert.equal(core.stateFromSearch("", graph).schoolSpacing, 0);
   const scs = core.filterGraph(graph, state);
   assert.deepEqual(scs.edges.map((edge) => edge.id), ["b|c"]);
   assert.deepEqual(scs.nodes.map((node) => node.id).sort(), ["b", "c"]);
@@ -457,6 +465,7 @@ test("URL state is bounded and round-trips", () => {
     showUnconnected: true,
     layout: "department-force",
     departmentSpacing: 5,
+    schoolSpacing: 0,
     selectedIds: ["c", "a"],
   });
   assert.equal(
@@ -475,7 +484,8 @@ test("URL state is bounded and round-trips", () => {
   );
   assert.equal(core.stateFromSearch("?layout=unsupported", graph).layout, "collaboration");
   assert.equal(core.stateFromSearch("?layout=departments", graph).layout, "departments");
-  assert.equal(core.stateFromSearch("?layout=department-force&spacing=99", graph).departmentSpacing, 5);
+  assert.equal(core.stateFromSearch("?layout=department-force&spacing=99", graph).departmentSpacing, 10);
+  assert.equal(core.stateFromSearch("?school_spacing=8", graph).schoolSpacing, 0);
   assert.equal(
     core.stateToSearch({ ...core.defaultState(graph), departmentSpacing: undefined }, graph),
     "",
@@ -686,7 +696,9 @@ test("department force layout is deterministic, organic, and tunably separated",
     departmentDistance(far) - departmentDistance(open) >
       departmentDistance(balanced) - departmentDistance(compact),
   );
-  assert.deepEqual(core.departmentForceLayout(filtered, graph, 99), far);
+  const maximum = core.departmentForceLayout(filtered, graph, 10);
+  assert.ok(departmentDistance(maximum) > departmentDistance(far));
+  assert.deepEqual(core.departmentForceLayout(filtered, graph, 99), maximum);
   assert.deepEqual(core.departmentForceLayout({ nodes: [] }, graph), new Map());
   assert.deepEqual(
     core.departmentForceLayout(
@@ -694,6 +706,37 @@ test("department force layout is deterministic, organic, and tunably separated",
       graph,
     ),
     new Map([["solo", { x: 0, y: 0 }]]),
+  );
+});
+
+test("cross-college distance separates disjoint schools but respects shared appointments", () => {
+  const graph = core.parseGraph(schoolFixture());
+  const filtered = core.filterGraph(graph, core.defaultState(graph));
+  const neutral = core.departmentForceLayout(filtered, graph, 3, [], 0);
+  const distant = core.departmentForceLayout(filtered, graph, 3, [], 10);
+  const distanceFromEngineering = (positions) => {
+    const center = {
+      x: (positions.get("a").x + positions.get("b").x) / 2,
+      y: (positions.get("a").y + positions.get("b").y) / 2,
+    };
+    return Math.hypot(positions.get("c").x - center.x, positions.get("c").y - center.y);
+  };
+  assert.ok(distanceFromEngineering(distant) > distanceFromEngineering(neutral));
+  assert.deepEqual(core.departmentForceLayout(filtered, graph, 3, [], 0), neutral);
+
+  const shared = schoolFixture();
+  shared.nodes[1].departments.push("two");
+  shared.nodes[1].school_ids.push("scs");
+  const sharedGraph = core.parseGraph(shared);
+  const pairNodes = [sharedGraph.nodeById.get("b"), sharedGraph.nodeById.get("c")];
+  const sharedPair = {
+    nodes: pairNodes,
+    edges: [{ ...sharedGraph.edgeById.get("b|c"), count: 1 }],
+    nodeById: new Map(pairNodes.map((node) => [node.id, node])),
+  };
+  assert.deepEqual(
+    core.departmentForceLayout(sharedPair, sharedGraph, 3, [], 10),
+    core.departmentForceLayout(sharedPair, sharedGraph, 3, [], 0),
   );
 });
 

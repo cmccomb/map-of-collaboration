@@ -2,7 +2,7 @@
 
 [![Deploy collaboration graph](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml/badge.svg)](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml)
 [![Live site](https://img.shields.io/website?url=https%3A%2F%2Fcmccomb.github.io%2Fmap-of-collaboration%2F&label=live%20site)](https://cmccomb.github.io/map-of-collaboration/)
-[![Line coverage: 98.50%](https://img.shields.io/badge/line%20coverage-98.50%25-brightgreen)](#checks)
+[![Line coverage: 98.53%](https://img.shields.io/badge/line%20coverage-98.53%25-brightgreen)](#checks)
 [![License: MIT](https://img.shields.io/github/license/cmccomb/map-of-collaboration)](LICENSE)
 
 An interactive coauthorship graph built from the canonical
@@ -19,10 +19,18 @@ publications behind every displayed connection.
 
 The default layout emphasizes the overall collaboration structure. Two
 shareable department views make links between groups easier to trace: an
-organic force layout with tunable cross-department distance, and a compact grid
-that keeps affiliation clusters aligned. With department filters active,
+organic force layout with tunable cross-department and cross-college distance,
+and a compact grid that keeps affiliation clusters aligned. With department filters active,
 faculty admitted through a secondary appointment join a selected affiliation's
 layout cluster while retaining their primary-affiliation color.
+
+The department force layout keeps its previous default (department distance
+`3`) and now offers levels `1`–`10`. Cross-college distance has a separate
+`0`–`10` control, with `0` neutral by default. Faculty count as being in
+different colleges only when they share no CMU school or college membership;
+external coauthors are not assigned a CMU college. The shareable URL stores
+nondefault values as `spacing` and `school_spacing`. Both controls change
+positions only; they do not add, remove, or reclassify coauthorship edges.
 
 ## What this graph does—and does not—show
 
@@ -56,8 +64,8 @@ npm run check
 npm test
 ```
 
-The current 35-test suite reports **98.50% line coverage**, **91.51% branch
-coverage**, and **98.16% function coverage** across the instrumented graph
+The current 36-test suite reports **98.53% line coverage**, **91.37% branch
+coverage**, and **98.17% function coverage** across the instrumented graph
 logic and site-build pipeline. The test command enforces a 90% minimum for all
 three measures.
 

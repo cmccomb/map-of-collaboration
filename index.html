@@ -260,7 +260,7 @@
                 id="department-spacing"
                 type="range"
                 min="1"
-                max="5"
+                max="10"
                 step="1"
                 value="3"
               />
@@ -269,9 +269,27 @@
                 <span>Farther</span>
               </div>
             </div>
+            <div id="school-spacing-control" class="layout-tuning" hidden>
+              <label for="school-spacing">
+                <span>Cross-college distance</span>
+                <output id="school-spacing-output" for="school-spacing">Neutral</output>
+              </label>
+              <input
+                id="school-spacing"
+                type="range"
+                min="0"
+                max="10"
+                step="1"
+                value="0"
+              />
+              <div class="range-labels" aria-hidden="true">
+                <span>Same as departments</span>
+                <span>Farther</span>
+              </div>
+            </div>
             <p class="field-note">
               Department force is organic; department grid keeps aligned groups. Secondary matches
-              join a selected cluster.
+              join a selected cluster. Distance settings change only the layout, not coauthorship links.
             </p>
           </fieldset>
 
