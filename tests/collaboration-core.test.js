@@ -861,7 +861,7 @@ test("department force layout is deterministic, organic, and tunably separated",
   );
 });
 
-test("cross-college distance separates disjoint schools but respects shared appointments", () => {
+test("school and college distance separates display groups, including joint appointments", () => {
   const graph = core.parseGraph(schoolFixture());
   const filtered = core.filterGraph(graph, core.defaultState(graph));
   const neutral = core.departmentForceLayout(filtered, graph, 3, [], 0);
@@ -886,10 +886,60 @@ test("cross-college distance separates disjoint schools but respects shared appo
     edges: [{ ...sharedGraph.edgeById.get("b|c"), count: 1 }],
     nodeById: new Map(pairNodes.map((node) => [node.id, node])),
   };
-  assert.deepEqual(
-    core.departmentForceLayout(sharedPair, sharedGraph, 3, [], 10),
-    core.departmentForceLayout(sharedPair, sharedGraph, 3, [], 0),
+  assert.equal(core.forceDepartmentAssignments(sharedPair, sharedGraph, 10).get("b"), "one");
+  const sharedNeutral = core.departmentForceLayout(sharedPair, sharedGraph, 3, [], 0);
+  const sharedDistant = core.departmentForceLayout(sharedPair, sharedGraph, 3, [], 10);
+  const pairDistance = (positions) =>
+    Math.hypot(positions.get("b").x - positions.get("c").x,
+      positions.get("b").y - positions.get("c").y);
+  assert.ok(pairDistance(sharedDistant) > pairDistance(sharedNeutral));
+});
+
+test("whole-CMU force view forms Engineering, MCS, and separate SCS departments", () => {
+  const value = schoolGridFixture();
+  value.schools.push({ school_id: "mcs", title: "Mellon College of Science" });
+  value.departments.push(
+    { department_id: "s3d", title: "Software and Societal Systems", school_id: "scs" },
+    { department_id: "math", title: "Mathematical Sciences", school_id: "mcs" },
   );
+  value.nodes.find((node) => node.id === "e").departments = ["one", "s3d"];
+  value.nodes.push(
+    { ...value.nodes.find((node) => node.id === "e"), id: "f", name: "S3D colleague" },
+    { ...value.nodes.find((node) => node.id === "c"), id: "g", name: "MCS one",
+      departments: ["math"], primary_department: "math", school_ids: ["mcs"] },
+    { ...value.nodes.find((node) => node.id === "c"), id: "h", name: "MCS two",
+      departments: ["math"], primary_department: "math", school_ids: ["mcs"] },
+  );
+  const work = (id) => [{ id, title: id, year: 2023 }];
+  value.edges.push(
+    { source: "e", target: "f", cross_department: false, works: work("w6") },
+    { source: "g", target: "h", cross_department: false, works: work("w7") },
+    { source: "b", target: "g", cross_department: true, cross_school: true,
+      works: work("w8") },
+  );
+  const graph = core.parseGraph(value);
+  const filtered = core.filterGraph(graph, core.defaultState(graph));
+  const assigned = core.forceDepartmentAssignments(filtered, graph, 10);
+  assert.equal(assigned.get("e"), "s3d");
+  assert.equal(assigned.get("f"), "s3d");
+  assert.equal(assigned.get("c"), "two");
+  assert.equal(assigned.get("g"), "math");
+
+  const positions = core.departmentForceLayout(filtered, graph, 1, [], 10);
+  const center = (ids) => ({
+    x: ids.reduce((sum, id) => sum + positions.get(id).x, 0) / ids.length,
+    y: ids.reduce((sum, id) => sum + positions.get(id).y, 0) / ids.length,
+  });
+  const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+  const engineering = center(["a", "b"]);
+  const scs = center(["c", "d", "e", "f"]);
+  const mcs = center(["g", "h"]);
+  const csd = center(["c", "d"]);
+  const s3d = center(["e", "f"]);
+  assert.ok(distance(engineering, scs) > 8);
+  assert.ok(distance(engineering, mcs) > 8);
+  assert.ok(distance(scs, mcs) > 8);
+  assert.ok(distance(csd, s3d) > 1);
 });
 
 test("collaboration layout removes a simple pair of crossing connections", () => {

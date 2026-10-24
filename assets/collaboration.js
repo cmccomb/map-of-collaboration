@@ -75,6 +75,7 @@
     suggestionNodes: [],
     drag: null,
     layoutPositions: new Map(),
+    layoutDepartments: new Map(),
     transition: null,
     renderQueued: false,
     toastTimer: 0,
@@ -140,9 +141,10 @@
   function nodeColor(node) {
     return node?.kind === "external_coauthor"
       ? css("--warm")
-      : departmentColor(state.view?.schools?.length
+      : departmentColor(state.layoutDepartments.get(node.id)
+        || (state.view?.schools?.length
           ? core.layoutDepartmentId(node, state.view.departments, state.graph, state.view.schools)
-          : node?.primary_department);
+          : node?.primary_department));
   }
 
   function nodeAffiliation(node) {
@@ -271,9 +273,7 @@
     const schoolFocused = core.hasSchoolFocus(state.view);
     elements.departmentOptions.replaceChildren();
     elements.departmentLegend.replaceChildren();
-    document.querySelector(".legend-heading p").textContent = schoolFocused
-      ? "Selected-school affiliation"
-      : "Primary affiliation";
+    updateLegendAffiliation();
     for (const department of state.graph.departments) {
       if (schoolFocused && !state.view.schools.includes(department.school_id)) continue;
       const label = element("label", "department-option");
@@ -299,6 +299,14 @@
       legendButton.append(legendDot, element("span", "", department.short_title));
       elements.departmentLegend.append(legendButton);
     }
+  }
+
+  function updateLegendAffiliation() {
+    document.querySelector(".legend-heading p").textContent = core.hasSchoolFocus(state.view)
+      ? "Selected school or college"
+      : state.view?.layout === "department-force" && state.view.schoolSpacing > 0
+        ? "Layout affiliation"
+        : "Primary affiliation";
   }
 
   function renderExternalLegend() {
@@ -402,6 +410,13 @@
   function applyView({ fit = false, updateUrl = true, animate = false } = {}) {
     state.view = core.normalizeView(state.view, state.graph);
     state.filtered = core.filterGraph(state.graph, state.view);
+    state.layoutDepartments = state.view.layout === "department-force"
+      ? core.forceDepartmentAssignments(
+          state.filtered, state.graph, state.view.schoolSpacing,
+          state.view.departments, state.view.schools,
+        )
+      : new Map();
+    updateLegendAffiliation();
     if (core.hasSchoolFocus(state.view)) {
       state.view.selectedIds = state.view.selectedIds.filter((id) => state.filtered.nodeIds.has(id));
     }
@@ -850,9 +865,8 @@
     const groups = new Map();
     const schoolFocused = core.hasSchoolFocus(state.view);
     for (const node of state.filtered.nodes) {
-      const departmentId = core.layoutDepartmentId(
-        node, state.view.departments, state.graph, state.view.schools,
-      );
+      const departmentId = state.layoutDepartments.get(node.id)
+        || core.layoutDepartmentId(node, state.view.departments, state.graph, state.view.schools);
       if (!groups.has(departmentId)) groups.set(departmentId, []);
       groups.get(departmentId).push(node);
     }
