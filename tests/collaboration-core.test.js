@@ -569,7 +569,7 @@ test("parseGraph keeps unresolved primaries and rejects invented or mismatched o
     ...core.defaultState(graph), departments: ["two"], showUnconnected: true,
   }).nodes.some((node) => node.id === "e"), true);
   joint.primary_department = "missing";
-  assert.throws(() => core.parseGraph(value), /primary department outside their memberships/);
+  assert.throws(() => core.parseGraph(value), /unknown primary academic home/);
 });
 
 test("filterGraph applies time, strength, and cross-department rules", () => {

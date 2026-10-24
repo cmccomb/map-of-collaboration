@@ -2,7 +2,7 @@
 
 [![Deploy collaboration graph](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml/badge.svg)](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml)
 [![Live site](https://img.shields.io/website?url=https%3A%2F%2Fcmccomb.github.io%2Fmap-of-collaboration%2F&label=live%20site)](https://cmccomb.github.io/map-of-collaboration/)
-[![Line coverage: 98.62%](https://img.shields.io/badge/line%20coverage-98.62%25-brightgreen)](#checks)
+[![Line coverage: 98.82%](https://img.shields.io/badge/line%20coverage-98.82%25-brightgreen)](#checks)
 [![License: MIT](https://img.shields.io/github/license/cmccomb/map-of-collaboration)](LICENSE)
 
 An interactive coauthorship graph built from the canonical
@@ -18,30 +18,31 @@ compare the union of their visible collaboration neighborhoods and inspect the
 publications behind every displayed connection.
 
 The default layout emphasizes the overall collaboration structure. Two
-shareable department views make links between groups easier to trace: an
-organic force layout with tunable cross-department and cross-school/college distance,
+shareable academic-home views make links between groups easier to trace: an
+organic force layout with tunable cross-home and cross-school/college distance,
 and a compact grid that keeps affiliation clusters aligned. The source registry's
-reviewed or inferred primary department sets each faculty node's color and
-default layout group. With a department or school filter active, faculty admitted
-through a secondary appointment join that selected group's layout cluster but
-retain their primary-department color. People without a supported primary remain
-neutral and have their own unresolved layout group.
+reviewed or inferred primary academic home sets each faculty node's color and
+default layout group. A primary may be a department, constituent school,
+institute, academic area, or broad school. A school-level home says that no
+narrower unit was verified; it has its own color and is distinct from unresolved.
+With a department or school filter active, faculty admitted through a secondary
+appointment join that selected group's layout cluster but retain their primary
+home color. People without a supported primary remain neutral and have their own
+unresolved layout group.
 
 A school selection limits CMU faculty and collaborations to the selected schools
-in every layout. Department controls and the color key show those schools'
-departments. Cross-appointed faculty remain visible when one of their school
-memberships is selected, and take the color and layout group of a selected-school
-department. The optional Erdős node remains available for an observed link to a
-selected-school faculty member.
+in every layout. Department controls show included unit memberships; the color
+key shows documented primary academic homes. Cross-appointed faculty remain
+visible when one of their school memberships is selected. The optional Erdős
+node remains available for an observed link to a selected-school faculty member.
 
-The department force layout keeps its previous default (department distance
+The home force layout keeps its previous default (home distance
 `3`) and offers levels `1`–`10`. School and college are the same top-level
 grouping in this map. Cross-school/college distance has a separate `0`–`10`
-control, with `0` neutral by default. At larger values, Engineering, MCS, and
-SCS each have a separate layout anchor. A cross-appointed faculty member uses
-one display group in the whole-CMU layout; the less populated exclusively
-affiliated school gets that member. Selecting a school or college places the
-member in the selected unit instead. This display choice does not change the
+control, with `0` neutral by default. At larger values, schools have separate
+layout anchors. A cross-appointed faculty member uses one display group in the
+whole-CMU layout. Selecting a school or college places the member in that unit
+when it differs from the primary home. This display choice does not change the
 underlying appointments, filters, or coauthorship links. External coauthors
 have no CMU school or college. The shareable URL stores nondefault values as
 `spacing` and `school_spacing`.
@@ -78,8 +79,8 @@ npm run check
 npm test
 ```
 
-The current 43-test suite reports **98.62% line coverage**, **92.55% branch
-coverage**, and **98.71% function coverage** across the instrumented graph
+The current 44-test suite reports **98.82% line coverage**, **91.42% branch
+coverage**, and **98.00% function coverage** across the instrumented graph
 logic and site-build pipeline. The test command enforces a 90% minimum for all
 three measures.
 
@@ -106,14 +107,17 @@ artifact: `catalogs.schools` with `school_id`, `title`, and `directory_url`;
 still comes only from shared `points[].faculty_ids`. Existing Engineering-only
 artifacts without school fields resolve to one `engineering` school.
 
-The builder reads `catalogs.faculty[].primary_department_id` from the canonical
-publication artifact. A blank value stays unresolved, even if a person has a
-single included campus membership. For older artifacts without that field, the
-builder derives a primary only when there is exactly one academic department;
-multiple memberships and the Silicon Valley campus alone remain unresolved.
-All included memberships continue to drive search, department filters, and
-cross-department edge classification. The source registry's basis and evidence
-URL appear in the faculty detail panel when available.
+The builder reads `catalogs.faculty[].primary_academic_home_type`, `_id`,
+`_title`, `_school_id`, `_source_url`, `_verified_at`, and `_basis` from the
+canonical publication artifact. An explicit `unresolved` stays unresolved.
+`primary_department_id` is used as a legacy fallback only for actual
+departments. In older artifacts without typed fields, the builder infers a
+primary only from a sole academic unit; neither a roster container nor the
+Silicon Valley campus qualifies. All included memberships continue to drive
+search and department filters. Cross-unit edges require distinct documented
+academic units on both faculty endpoints. Tepper and Heinz roster containers
+do not count as shared academic units. The primary's type, basis, and evidence
+URL appear in faculty details.
 
 `?schools=scs` shows a CMU faculty edge only when **both** endpoints belong to
 SCS, in every layout. The optional historical coauthor can appear through a
