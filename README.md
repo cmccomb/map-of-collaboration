@@ -26,9 +26,9 @@ default layout group. A primary may be a department, constituent school,
 institute, academic area, or broad school. A school-level home says that no
 narrower unit was verified; it has its own color and is distinct from unresolved.
 With a department or school filter active, faculty admitted through a secondary
-appointment join that selected group's layout cluster but retain their primary
-home color. People without a supported primary remain neutral and have their own
-unresolved layout group.
+appointment may join that selected group's layout cluster while retaining their
+primary home color. People without a supported primary remain neutral and have
+their own unresolved layout group.
 
 A school selection limits CMU faculty and collaborations to the selected schools
 in every layout. Department controls show included unit memberships; the color
