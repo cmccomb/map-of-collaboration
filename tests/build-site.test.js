@@ -171,6 +171,7 @@ test("deriveGraph keeps cross-school coauthorship and cross-appointed faculty di
   assert.equal(graph.counts.cross_school_edge_count, 1);
   assert.deepEqual(graph.nodes.find((node) => node.id === "b").school_ids, ["engineering", "scs"]);
   assert.equal(graph.departments.find((department) => department.department_id === "csd").school_id, "scs");
+  assert.equal(graph.departments.find((department) => department.department_id === "csd").short_title, "CSD");
   assert.equal(graph.schools.find((school) => school.school_id === "scs").faculty_count, 2);
 });
 
@@ -231,6 +232,7 @@ test("deriveGraph adds only verified external coauthor edges without changing CM
   assert.equal(graph.counts.mapped_faculty_count, 1);
   assert.equal(graph.counts.connected_faculty_count, 1);
   assert.equal(graph.schools.find((school) => school.school_id === "mcs").faculty_count, 1);
+  assert.equal(graph.departments.find((department) => department.department_id === "math").short_title, "Math");
   assert.equal(graph.edges.length, 1);
   assert.deepEqual(graph.edges[0].works.map((work) => work.year), [1995, 1990]);
   assert.equal(graph.edges[0].cross_department, false);

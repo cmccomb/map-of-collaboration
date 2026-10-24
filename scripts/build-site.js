@@ -12,17 +12,28 @@ const GRAPH_SCHEMA_VERSION = 1;
 const EXPECTED_SOURCE_SCHEMA = 7;
 
 const DEPARTMENT_PRESENTATION = Object.freeze({
+  bio: { short_title: "Bio", color_dark: "#8edca4", color_light: "#2c8952" },
   bme: { short_title: "BME", color_dark: "#ff9f8b", color_light: "#b94331" },
+  cbd: { short_title: "CBD", color_dark: "#b9df8a", color_light: "#648b2b" },
+  chem: { short_title: "Chem", color_dark: "#e6d37d", color_light: "#806d18" },
   cheme: { short_title: "ChemE", color_dark: "#73c5df", color_light: "#14738e" },
   civil: { short_title: "CEE", color_dark: "#ffc36f", color_light: "#9b6217" },
   "cmu-africa": { short_title: "Africa", color_dark: "#91d4a5", color_light: "#30774a" },
   "cmu-silicon-valley": { short_title: "Silicon Valley", color_dark: "#b6a7ec", color_light: "#624ea2" },
+  csd: { short_title: "CSD", color_dark: "#9db4ff", color_light: "#475faa" },
   ece: { short_title: "ECE", color_dark: "#f39dca", color_light: "#a63f76" },
   epp: { short_title: "EPP", color_dark: "#dcaa91", color_light: "#8d573d" },
+  hcii: { short_title: "HCII", color_dark: "#ffb8d7", color_light: "#a24370" },
   iii: { short_title: "iii", color_dark: "#80d6cf", color_light: "#247c76" },
   ini: { short_title: "INI", color_dark: "#d5d279", color_light: "#777518" },
+  lti: { short_title: "LTI", color_dark: "#b8a7ff", color_light: "#6954b3" },
+  math: { short_title: "Math", color_dark: "#f6a7a0", color_light: "#a64742" },
   mech: { short_title: "MechE", color_dark: "#66b5ff", color_light: "#1769a8" },
+  mld: { short_title: "MLD", color_dark: "#81d7f0", color_light: "#197d9d" },
   mse: { short_title: "MSE", color_dark: "#c4a0e8", color_light: "#75509b" },
+  physics: { short_title: "Physics", color_dark: "#a8cbd0", color_light: "#437d84" },
+  ri: { short_title: "RI", color_dark: "#f8b683", color_light: "#a95a22" },
+  s3d: { short_title: "S3D", color_dark: "#e4a5ea", color_light: "#9b4e9f" },
 });
 
 function assert(condition, message) {
