@@ -73,7 +73,7 @@
             <a
               href="https://cmccomb.com/map-of-eng/"
               aria-label="Open the CMU Engineering research map"
-              >Research map <span aria-hidden="true">↗</span></a
+              >Engineering map <span aria-hidden="true">↗</span></a
             >
             <a
               href="https://huggingface.co/datasets/ccm/cmu-engineering-publications"
@@ -152,10 +152,16 @@
             </p>
           </div>
 
+          <fieldset class="school-fieldset" id="school-fieldset" hidden>
+            <legend>Schools</legend>
+            <div id="school-options" class="department-options"></div>
+            <p class="field-note">Show connections involving anyone in a selected school, including collaborators elsewhere.</p>
+          </fieldset>
+
           <fieldset class="department-fieldset">
             <legend>Departments and programs</legend>
             <div id="department-options" class="department-options"></div>
-            <p class="field-note">Select any number; faculty with any selected affiliation remain.</p>
+            <p class="field-note">Select any number; both ends of a connection must match.</p>
           </fieldset>
 
           <fieldset class="year-filter-fieldset">
@@ -198,6 +204,13 @@
               <span>
                 <strong>Cross-department only</strong>
                 <small>Hide pairs that share an affiliation</small>
+              </span>
+            </label>
+            <label class="check-row" id="cross-school-row" hidden>
+              <input id="cross-school" type="checkbox" />
+              <span>
+                <strong>Cross-school only</strong>
+                <small>Hide pairs that share a school</small>
               </span>
             </label>
             <label class="check-row">
@@ -274,7 +287,7 @@
             <summary>How to read this graph</summary>
             <p>
               Connections use stable faculty IDs attached to the same
-              deduplicated work in the map-of-eng source artifact. No topical
+              deduplicated work in the publication source artifact. No topical
               or institutional relationship is inferred.
             </p>
             <p>

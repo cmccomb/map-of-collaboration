@@ -66,12 +66,32 @@
         department_id: id,
         title: String(department.title || id),
         short_title: String(department.short_title || department.title || id),
+        school_id: String(department.school_id || "engineering"),
         directory_url: safeExternalUrl(department.directory_url),
         color_dark: String(department.color_dark || "#73c5df"),
         color_light: String(department.color_light || "#197b99"),
         faculty_count: Math.max(0, integer(department.faculty_count)),
       };
     });
+    const hasSchools = Array.isArray(input.schools);
+    const schoolIds = new Set();
+    const schools = (hasSchools
+      ? input.schools
+      : [{ school_id: "engineering", title: "College of Engineering" }]
+    ).map((school) => {
+      const id = String(school.school_id || "");
+      assert(id && !schoolIds.has(id), `Invalid or duplicate school ID: ${id}`);
+      schoolIds.add(id);
+      return {
+        school_id: id,
+        title: String(school.title || id),
+        directory_url: safeExternalUrl(school.directory_url),
+        faculty_count: Math.max(0, integer(school.faculty_count)),
+      };
+    });
+    assert(schools.length > 0, "Graph artifact is missing schools");
+    assert(departments.every((department) => schoolIds.has(department.school_id)),
+      "Graph artifact has a department with an invalid school");
 
     const nodeIds = new Set();
     const nodes = input.nodes.map((node) => {
@@ -82,6 +102,11 @@
         departmentIds.has(item),
       );
       assert(departmentsForNode.length > 0, `Faculty ${id} has no valid department`);
+      const schoolsForNode = hasSchools
+        ? uniqueStrings(node.school_ids)
+        : ["engineering"];
+      assert(schoolsForNode.length > 0 && schoolsForNode.every((item) => schoolIds.has(item)),
+        `Faculty ${id} has invalid school memberships`);
       assert(Number.isFinite(node.x) && Number.isFinite(node.y), `Faculty ${id} has no position`);
       return {
         id,
@@ -90,6 +115,10 @@
         primary_department: departmentIds.has(node.primary_department)
           ? node.primary_department
           : departmentsForNode[0],
+        school_ids: schoolsForNode,
+        primary_school: schoolIds.has(node.primary_school)
+          ? node.primary_school
+          : schoolsForNode[0],
         roles: uniqueStrings(node.roles),
         publication_count: Math.max(0, integer(node.publication_count)),
         mapped_publication_count: Math.max(0, integer(node.mapped_publication_count)),
@@ -134,6 +163,7 @@
         source,
         target,
         cross_department: Boolean(edge.cross_department),
+        cross_school: Boolean(edge.cross_school),
         works,
       };
     });
@@ -156,12 +186,14 @@
         missing_count: Math.max(0, integer(years.missing_count)),
       },
       departments,
+      schools,
       nodes,
       edges,
       nodeById: new Map(nodes.map((node) => [node.id, node])),
       departmentById: new Map(
         departments.map((department) => [department.department_id, department]),
       ),
+      schoolById: new Map(schools.map((school) => [school.school_id, school])),
       edgeById: new Map(edges.map((edge) => [edge.id, edge])),
     };
   }
@@ -169,10 +201,12 @@
   function defaultState(graph) {
     return {
       departments: [],
+      schools: [],
       fromYear: graph.years.minimum,
       toYear: graph.years.maximum,
       minimum: 1,
       crossDepartment: false,
+      crossSchool: false,
       showUnconnected: false,
       layout: "collaboration",
       departmentSpacing: 3,
@@ -194,9 +228,13 @@
     const defaults = defaultState(graph);
     const params = new URLSearchParams(String(search || "").replace(/^\?/, ""));
     const allowedDepartments = new Set(graph.departments.map((item) => item.department_id));
+    const allowedSchools = new Set(graph.schools.map((item) => item.school_id));
     const departments = uniqueStrings((params.get("departments") || "").split(","))
       .filter(Boolean)
       .filter((id) => allowedDepartments.has(id));
+    const schools = uniqueStrings((params.get("schools") || "").split(","))
+      .filter(Boolean)
+      .filter((id) => allowedSchools.has(id));
     let fromYear = clamp(
       integer(params.get("from"), defaults.fromYear),
       graph.years.minimum,
@@ -214,10 +252,12 @@
     );
     return {
       departments,
+      schools,
       fromYear,
       toYear,
       minimum: clamp(integer(params.get("minimum"), 1), 1, 20),
       crossDepartment: params.get("cross") === "1",
+      crossSchool: graph.schools.length > 1 && params.get("cross_school") === "1",
       showUnconnected: params.get("unconnected") === "1",
       layout: ["departments", "department-force"].includes(params.get("layout"))
         ? params.get("layout")
@@ -231,10 +271,12 @@
     const defaults = defaultState(graph);
     const params = new URLSearchParams();
     if (state.departments?.length) params.set("departments", [...state.departments].sort().join(","));
+    if (state.schools?.length) params.set("schools", [...state.schools].sort().join(","));
     if (state.fromYear !== defaults.fromYear) params.set("from", String(state.fromYear));
     if (state.toYear !== defaults.toYear) params.set("to", String(state.toYear));
     if (state.minimum !== 1) params.set("minimum", String(state.minimum));
     if (state.crossDepartment) params.set("cross", "1");
+    if (state.crossSchool && graph.schools.length > 1) params.set("cross_school", "1");
     if (state.showUnconnected) params.set("unconnected", "1");
     if (["departments", "department-force"].includes(state.layout)) {
       params.set("layout", state.layout);
@@ -265,9 +307,15 @@
 
   function filterGraph(graph, state) {
     const selectedDepartments = new Set(state.departments || []);
-    const candidateIds = new Set(
+    const selectedSchools = new Set(state.schools || []);
+    const departmentCandidateIds = new Set(
       graph.nodes
         .filter((node) => nodeMatchesDepartments(node, selectedDepartments))
+        .map((node) => node.id),
+    );
+    const schoolCandidateIds = new Set(
+      graph.nodes
+        .filter((node) => !selectedSchools.size || node.school_ids.some((id) => selectedSchools.has(id)))
         .map((node) => node.id),
     );
     const filteredEdges = [];
@@ -278,8 +326,10 @@
     );
 
     for (const edge of graph.edges) {
-      if (!candidateIds.has(edge.source) || !candidateIds.has(edge.target)) continue;
+      if (!departmentCandidateIds.has(edge.source) || !departmentCandidateIds.has(edge.target)) continue;
+      if (selectedSchools.size && !schoolCandidateIds.has(edge.source) && !schoolCandidateIds.has(edge.target)) continue;
       if (state.crossDepartment && !edge.cross_department) continue;
+      if (state.crossSchool && !edge.cross_school) continue;
       const works = edge.works.filter((work) => includesYear(work, state, graph));
       if (works.length < state.minimum) continue;
       filteredEdges.push({ ...edge, count: works.length, works });
@@ -294,7 +344,9 @@
     }
 
     if (state.showUnconnected) {
-      candidateIds.forEach((id) => visibleIds.add(id));
+      departmentCandidateIds.forEach((id) => {
+        if (schoolCandidateIds.has(id)) visibleIds.add(id);
+      });
     }
     validFacultyIds(state.selectedIds || [], graph).forEach((id) => visibleIds.add(id));
 
@@ -829,6 +881,7 @@
         "earliest_year",
         "latest_year",
         "cross_department",
+        "cross_school",
       ],
     ];
     for (const edge of filtered.edges) {
@@ -840,6 +893,7 @@
         years.length ? Math.min(...years) : "",
         years.length ? Math.max(...years) : "",
         edge.cross_department ? "yes" : "no",
+        edge.cross_school ? "yes" : "no",
       ]);
     }
     return rows.map((row) => row.map(csvEscape).join(",")).join("\n");

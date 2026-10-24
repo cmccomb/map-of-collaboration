@@ -92,6 +92,24 @@ function artifactFixture() {
   };
 }
 
+function schoolArtifactFixture() {
+  const artifact = artifactFixture();
+  artifact.catalogs.schools = [
+    { school_id: "engineering", title: "College of Engineering" },
+    { school_id: "scs", title: "School of Computer Science" },
+  ];
+  artifact.catalogs.departments.forEach((department) => {
+    department.school_id = "engineering";
+  });
+  artifact.catalogs.faculty.forEach((person) => {
+    person.school_ids = ["engineering"];
+  });
+  artifact.points.forEach((point) => {
+    point.school_ids = ["engineering"];
+  });
+  return artifact;
+}
+
 const config = {
   title: "Fixture graph",
   heading: "Fixture",
@@ -106,6 +124,9 @@ test("deriveGraph creates evidence-backed edges and coverage counts", () => {
   assert.equal(graph.edges.length, 1);
   assert.equal(graph.edges[0].works[0].title, "A shared paper");
   assert.equal(graph.edges[0].cross_department, true);
+  assert.equal(graph.edges[0].cross_school, false);
+  assert.deepEqual(graph.schools.map((school) => school.school_id), ["engineering"]);
+  assert.deepEqual(graph.nodes[0].school_ids, ["engineering"]);
   assert.deepEqual(graph.counts, {
     work_count: 2,
     faculty_count: 3,
@@ -117,12 +138,58 @@ test("deriveGraph creates evidence-backed edges and coverage counts", () => {
     multiple_faculty_work_count: 1,
     pair_work_count: 1,
     cross_department_edge_count: 1,
+    cross_school_edge_count: 0,
   });
   assert.equal(graph.quality.missing_year_count, 1);
   graph.nodes.forEach((node) => {
     assert.equal(Number.isFinite(node.x), true);
     assert.equal(Number.isFinite(node.y), true);
   });
+});
+
+test("deriveGraph keeps cross-school coauthorship and cross-appointed faculty distinct", () => {
+  const artifact = schoolArtifactFixture();
+  artifact.catalogs.departments.push({
+    department_id: "csd",
+    school_id: "scs",
+    title: "Computer Science Department",
+  });
+  artifact.catalogs.faculty[0].school_ids = ["engineering"];
+  artifact.catalogs.faculty[1].school_ids = ["engineering", "scs"];
+  artifact.catalogs.faculty[1].memberships.push({ department_id: "csd", role: "faculty" });
+  artifact.catalogs.faculty[2].school_ids = ["scs"];
+  artifact.catalogs.faculty[2].memberships = [{ department_id: "csd", role: "faculty" }];
+  artifact.points[0].school_ids = ["engineering", "scs"];
+  artifact.points[1].faculty_ids = ["a", "c"];
+  artifact.points[1].school_ids = ["engineering", "scs"];
+
+  const graph = build.deriveGraph(artifact, config, "a".repeat(40));
+  const edges = new Map(graph.edges.map((edge) => [`${edge.source}|${edge.target}`, edge]));
+  assert.equal(edges.get("a|b").cross_department, true);
+  assert.equal(edges.get("a|b").cross_school, false);
+  assert.equal(edges.get("a|c").cross_school, true);
+  assert.equal(graph.counts.cross_school_edge_count, 1);
+  assert.deepEqual(graph.nodes.find((node) => node.id === "b").school_ids, ["engineering", "scs"]);
+  assert.equal(graph.departments.find((department) => department.department_id === "csd").school_id, "scs");
+  assert.equal(graph.schools.find((school) => school.school_id === "scs").faculty_count, 2);
+});
+
+test("deriveGraph checks the additive school contract", () => {
+  const cases = [
+    [(artifact) => (artifact.catalogs.schools = []), /invalid schools/],
+    [(artifact) => (artifact.catalogs.schools[0].title = ""), /invalid schools/],
+    [(artifact) => (artifact.catalogs.schools[1].school_id = "engineering"), /duplicate school IDs/],
+    [(artifact) => (artifact.catalogs.departments[0].school_id = "missing"), /invalid school/],
+    [(artifact) => (artifact.catalogs.faculty[0].school_ids = []), /invalid school memberships/],
+    [(artifact) => (artifact.catalogs.faculty[0].school_ids = ["missing"]), /invalid school memberships/],
+    [(artifact) => (artifact.catalogs.faculty[0].school_ids = ["scs"]), /department outside their schools/],
+    [(artifact) => (artifact.points[0].school_ids = ["missing"]), /invalid school references/],
+  ];
+  for (const [mutate, pattern] of cases) {
+    const artifact = schoolArtifactFixture();
+    mutate(artifact);
+    assert.throws(() => build.deriveGraph(artifact, config, "a".repeat(40)), pattern);
+  }
 });
 
 test("deriveGraph rejects duplicate work keys and broken faculty joins", () => {

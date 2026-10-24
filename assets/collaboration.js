@@ -18,6 +18,8 @@
     detailPanel: document.querySelector("#detail-panel"),
     detailContent: document.querySelector("#detail-content"),
     detailEmpty: document.querySelector(".detail-empty"),
+    schoolFieldset: document.querySelector("#school-fieldset"),
+    schoolOptions: document.querySelector("#school-options"),
     departmentOptions: document.querySelector("#department-options"),
     departmentLegend: document.querySelector("#department-legend"),
     facultySearch: document.querySelector("#faculty-search"),
@@ -29,6 +31,8 @@
     strength: document.querySelector("#strength-min"),
     strengthOutput: document.querySelector("#strength-output"),
     crossDepartment: document.querySelector("#cross-department"),
+    crossSchoolRow: document.querySelector("#cross-school-row"),
+    crossSchool: document.querySelector("#cross-school"),
     showUnconnected: document.querySelector("#show-unconnected"),
     layoutOptions: document.querySelector("#layout-options"),
     departmentSpacingControl: document.querySelector("#department-spacing-control"),
@@ -147,6 +151,18 @@
       const rawGraph = await fetchJson(config.graph_artifact, "Collaboration artifact");
       state.graph = core.parseGraph(rawGraph);
       state.view = core.stateFromSearch(window.location.search, state.graph);
+      if (state.graph.schools.length > 1) {
+        document.querySelector(".eyebrow").textContent = "Carnegie Mellon University";
+        document.title = state.graph.title;
+        document.querySelector('meta[name="description"]').content =
+          "Explore observed publication collaborations among cataloged CMU faculty.";
+        elements.canvas.setAttribute("aria-label", "Interactive CMU faculty collaboration graph");
+      }
+      const datasetLink = document.querySelector('.intro-links a[href*="huggingface.co/datasets/"]');
+      if (datasetLink && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.dataset_id || "")) {
+        datasetLink.href = `https://huggingface.co/datasets/${config.dataset_id}`;
+        datasetLink.setAttribute("aria-label", "Open the publication dataset");
+      }
       renderControls();
       syncControls();
       applyView({ fit: true, updateUrl: false });
@@ -154,7 +170,7 @@
       elements.status.textContent = `${plural(counts.faculty_count, "faculty member")} · ${plural(
         counts.edge_count,
         "observed connection",
-      )} · source updated ${formatDate(state.graph.source.source_data_newest_at_utc)}`;
+      )} · full corpus source updated ${formatDate(state.graph.source.source_data_newest_at_utc)}`;
       elements.coverageNote.textContent = `${plural(
         counts.mapped_faculty_count,
         "faculty member",
@@ -184,6 +200,23 @@
   }
 
   function renderControls() {
+    elements.schoolOptions.replaceChildren();
+    elements.schoolFieldset.hidden = state.graph.schools.length <= 1;
+    elements.crossSchoolRow.hidden = state.graph.schools.length <= 1;
+    for (const school of state.graph.schools) {
+      const label = element("label", "department-option");
+      const input = element("input");
+      input.type = "checkbox";
+      input.value = school.school_id;
+      input.name = "school";
+      const content = element("span");
+      content.style.setProperty("--dot", css("--accent-strong"));
+      const dot = element("i");
+      dot.setAttribute("aria-hidden", "true");
+      content.append(dot, document.createTextNode(school.title));
+      label.append(input, content);
+      elements.schoolOptions.append(label);
+    }
     elements.departmentOptions.replaceChildren();
     elements.departmentLegend.replaceChildren();
     for (const department of state.graph.departments) {
@@ -222,6 +255,10 @@
 
   function syncControls() {
     const view = state.view;
+    const selectedSchools = new Set(view.schools);
+    elements.schoolOptions.querySelectorAll("input").forEach((input) => {
+      input.checked = selectedSchools.has(input.value);
+    });
     const selectedDepartments = new Set(view.departments);
     elements.departmentOptions.querySelectorAll("input").forEach((input) => {
       input.checked = selectedDepartments.has(input.value);
@@ -233,6 +270,7 @@
       view.minimum === 1 ? "work" : "works"
     }`;
     elements.crossDepartment.checked = view.crossDepartment;
+    elements.crossSchool.checked = view.crossSchool;
     elements.showUnconnected.checked = view.showUnconnected;
     elements.layoutOptions.querySelectorAll("input").forEach((input) => {
       input.checked = input.value === view.layout;
@@ -268,6 +306,7 @@
     }
     const suffix = [
       state.view.crossDepartment ? "cross-department" : "",
+      state.view.crossSchool ? "cross-school" : "",
       state.view.layout === "department-force"
         ? "organic department clusters"
         : state.view.layout === "departments"
@@ -1218,7 +1257,9 @@
     const url = URL.createObjectURL(blob);
     const link = element("a");
     link.href = url;
-    link.download = "cmu-engineering-collaborations.csv";
+    link.download = state.graph.schools.length > 1
+      ? "cmu-collaborations.csv"
+      : "cmu-engineering-collaborations.csv";
     document.body.append(link);
     link.click();
     link.remove();
@@ -1366,6 +1407,12 @@
       if (!event.target.closest(".faculty-field")) closeSuggestions();
     });
 
+    elements.schoolOptions.addEventListener("change", () => {
+      state.view.schools = [...elements.schoolOptions.querySelectorAll("input:checked")].map(
+        (input) => input.value,
+      );
+      applyView({ fit: true, animate: true });
+    });
     elements.departmentOptions.addEventListener("change", () => {
       state.view.departments = [...elements.departmentOptions.querySelectorAll("input:checked")].map(
         (input) => input.value,
@@ -1403,6 +1450,10 @@
     });
     elements.crossDepartment.addEventListener("change", () => {
       state.view.crossDepartment = elements.crossDepartment.checked;
+      applyView({ fit: true, animate: true });
+    });
+    elements.crossSchool.addEventListener("change", () => {
+      state.view.crossSchool = elements.crossSchool.checked;
       applyView({ fit: true, animate: true });
     });
     elements.showUnconnected.addEventListener("change", () => {
