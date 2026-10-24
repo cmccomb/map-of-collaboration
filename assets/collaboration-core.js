@@ -676,7 +676,8 @@
     if ((!selectedSchools.size || selectedSchools.has(primarySchool))
       && (!selectedDepartments.size || selectedDepartments.has(primaryGroup)
         || (node.primary_academic_home_type === "school" || node.primary_academic_home_type === "academic_area")
-          && choices.some((id) => selectedDepartments.has(id)))) {
+          && choices.some((id) => selectedDepartments.has(id)
+            && graph?.departmentById.get(id)?.school_id === primarySchool))) {
       return primaryGroup;
     }
     return (
