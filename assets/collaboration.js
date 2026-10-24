@@ -18,9 +18,12 @@
     detailPanel: document.querySelector("#detail-panel"),
     detailContent: document.querySelector("#detail-content"),
     detailEmpty: document.querySelector(".detail-empty"),
+    schoolFieldset: document.querySelector("#school-fieldset"),
+    schoolOptions: document.querySelector("#school-options"),
     departmentOptions: document.querySelector("#department-options"),
     departmentLegend: document.querySelector("#department-legend"),
     facultySearch: document.querySelector("#faculty-search"),
+    facultySearchNote: document.querySelector("#faculty-search-note"),
     facultySuggestions: document.querySelector("#faculty-suggestions"),
     selectedFaculty: document.querySelector("#selected-faculty"),
     yearMin: document.querySelector("#year-min"),
@@ -29,7 +32,11 @@
     strength: document.querySelector("#strength-min"),
     strengthOutput: document.querySelector("#strength-output"),
     crossDepartment: document.querySelector("#cross-department"),
+    crossSchoolRow: document.querySelector("#cross-school-row"),
+    crossSchool: document.querySelector("#cross-school"),
     showUnconnected: document.querySelector("#show-unconnected"),
+    showExternalRow: document.querySelector("#show-external-row"),
+    showExternal: document.querySelector("#show-external"),
     layoutOptions: document.querySelector("#layout-options"),
     departmentSpacingControl: document.querySelector("#department-spacing-control"),
     departmentSpacing: document.querySelector("#department-spacing"),
@@ -116,6 +123,24 @@
       : department.color_dark;
   }
 
+  function nodeColor(node) {
+    return node?.kind === "external_coauthor"
+      ? css("--warm")
+      : departmentColor(node?.primary_department);
+  }
+
+  function nodeAffiliation(node) {
+    return node.kind === "external_coauthor"
+      ? "Historical coauthor outside CMU"
+      : node.departments
+          .map((id) => state.graph.departmentById.get(id)?.short_title || id)
+          .join(" · ");
+  }
+
+  function hasExternalCoauthors() {
+    return Boolean(state.graph?.nodes.some((node) => node.kind === "external_coauthor"));
+  }
+
   async function fetchJson(url, label) {
     let lastError;
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -147,14 +172,61 @@
       const rawGraph = await fetchJson(config.graph_artifact, "Collaboration artifact");
       state.graph = core.parseGraph(rawGraph);
       state.view = core.stateFromSearch(window.location.search, state.graph);
+      if (hasExternalCoauthors()) {
+        document.querySelector('label[for="faculty-search"] span').textContent = "Add people";
+        elements.selectedFaculty.setAttribute("aria-label", "Selected people");
+        document.querySelector("#canvas-instructions").textContent =
+          "Drag to pan, use the mouse wheel or zoom buttons to zoom, and select nodes to compare observed collaborators. Select a node again to remove it. Search to reach every person.";
+        document.querySelector("#detail-panel").setAttribute("aria-label", "Selected person details");
+        document.querySelector(".detail-empty .eyebrow").textContent = "Person details";
+        document.querySelector(".detail-empty h2").textContent = "Select a person";
+        document.querySelector(".detail-empty p:last-child").textContent =
+          "Choose CMU faculty or verified external coauthors to inspect shared works.";
+        document.querySelector(".department-fieldset .field-note").textContent =
+          "Faculty pairs must both match; a verified outside coauthor stays visible when the CMU faculty endpoint matches.";
+        document.querySelector("#cross-department + span small").textContent =
+          "Show CMU faculty pairs in different departments";
+        document.querySelector("#cross-school + span small").textContent =
+          "Show CMU faculty pairs with no school in common";
+        document.querySelector(".method-note").append(element(
+          "p",
+          "",
+          "Only selected historical coauthors outside CMU are cataloged. They appear when a publication has an explicit, source-verified coauthor association; other outside collaborators are not indexed here. They do not count as CMU faculty or members of a school.",
+        ));
+      }
+      elements.showExternalRow.hidden = !hasExternalCoauthors();
+      if (state.graph.schools.length > 1 || hasExternalCoauthors()) {
+        document.querySelector(".eyebrow").textContent = "Carnegie Mellon University";
+        document.title = state.graph.title;
+        document.querySelector('meta[name="description"]').content =
+          hasExternalCoauthors()
+            ? "Explore observed publication collaborations among cataloged CMU faculty and verified external coauthors."
+            : "Explore observed publication collaborations among cataloged CMU faculty.";
+        elements.canvas.setAttribute("aria-label", hasExternalCoauthors()
+          ? "Interactive CMU faculty and external coauthor collaboration graph"
+          : "Interactive CMU faculty collaboration graph");
+      }
+      const datasetLink = document.querySelector('.intro-links a[href*="huggingface.co/datasets/"]');
+      if (datasetLink && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.dataset_id || "")) {
+        datasetLink.href = `https://huggingface.co/datasets/${config.dataset_id}`;
+        datasetLink.setAttribute("aria-label", "Open the publication dataset");
+      }
       renderControls();
       syncControls();
       applyView({ fit: true, updateUrl: false });
       const counts = state.graph.counts;
-      elements.status.textContent = `${plural(counts.faculty_count, "faculty member")} · ${plural(
+      elements.facultySearchNote.textContent = `Search all ${plural(
+        counts.faculty_count,
+        "cataloged faculty member",
+      )} across ${plural(state.graph.departments.length, "department or program", "departments and programs")}, including people without mapped works. Connected faculty appear on the graph by default.`;
+      elements.status.textContent = `${plural(counts.faculty_count, "faculty member")}${
+        counts.external_coauthor_count
+          ? ` · ${plural(counts.external_coauthor_count, "external coauthor")}`
+          : ""
+      } · ${plural(
         counts.edge_count,
         "observed connection",
-      )} · source updated ${formatDate(state.graph.source.source_data_newest_at_utc)}`;
+      )} · latest Scholar refresh ${formatDate(state.graph.source.source_data_newest_at_utc)}`;
       elements.coverageNote.textContent = `${plural(
         counts.mapped_faculty_count,
         "faculty member",
@@ -184,6 +256,23 @@
   }
 
   function renderControls() {
+    elements.schoolOptions.replaceChildren();
+    elements.schoolFieldset.hidden = state.graph.schools.length <= 1;
+    elements.crossSchoolRow.hidden = state.graph.schools.length <= 1;
+    for (const school of state.graph.schools) {
+      const label = element("label", "department-option");
+      const input = element("input");
+      input.type = "checkbox";
+      input.value = school.school_id;
+      input.name = "school";
+      const content = element("span");
+      content.style.setProperty("--dot", css("--accent-strong"));
+      const dot = element("i");
+      dot.setAttribute("aria-hidden", "true");
+      content.append(dot, document.createTextNode(school.title));
+      label.append(input, content);
+      elements.schoolOptions.append(label);
+    }
     elements.departmentOptions.replaceChildren();
     elements.departmentLegend.replaceChildren();
     for (const department of state.graph.departments) {
@@ -210,7 +299,16 @@
       legendButton.append(legendDot, element("span", "", department.short_title));
       elements.departmentLegend.append(legendButton);
     }
-    elements.facultySearch.placeholder = `Search ${formatNumber(state.graph.nodes.length)} faculty`;
+    if (hasExternalCoauthors() && state.view.showExternal) {
+      const key = element("div", "external-legend");
+      const dot = element("span", "legend-dot");
+      dot.style.setProperty("--dot", css("--warm"));
+      key.append(dot, element("span", "", "Historical coauthor outside CMU"));
+      elements.departmentLegend.append(key);
+    }
+    elements.facultySearch.placeholder = hasExternalCoauthors()
+      ? `Search ${formatNumber(state.graph.nodes.length)} people`
+      : `Search ${formatNumber(state.graph.nodes.length)} faculty`;
     elements.yearMin.min = String(state.graph.years.minimum);
     elements.yearMin.max = String(state.graph.years.maximum);
     elements.yearMax.min = String(state.graph.years.minimum);
@@ -222,6 +320,10 @@
 
   function syncControls() {
     const view = state.view;
+    const selectedSchools = new Set(view.schools);
+    elements.schoolOptions.querySelectorAll("input").forEach((input) => {
+      input.checked = selectedSchools.has(input.value);
+    });
     const selectedDepartments = new Set(view.departments);
     elements.departmentOptions.querySelectorAll("input").forEach((input) => {
       input.checked = selectedDepartments.has(input.value);
@@ -240,7 +342,9 @@
       view.minimum === 1 ? "work" : "works"
     }`;
     elements.crossDepartment.checked = view.crossDepartment;
+    elements.crossSchool.checked = view.crossSchool;
     elements.showUnconnected.checked = view.showUnconnected;
+    elements.showExternal.checked = view.showExternal;
     elements.layoutOptions.querySelectorAll("input").forEach((input) => {
       input.checked = input.value === view.layout;
     });
@@ -275,19 +379,24 @@
     }
     const suffix = [
       state.view.crossDepartment ? "cross-department" : "",
+      state.view.crossSchool ? "cross-school" : "",
       state.view.layout === "department-force"
         ? "organic department clusters"
         : state.view.layout === "departments"
           ? "department grid"
           : "",
       state.view.selectedIds.length
-        ? `${plural(state.view.selectedIds.length, "faculty member")} selected`
+        ? `${plural(state.view.selectedIds.length, hasExternalCoauthors() ? "person" : "faculty member")} selected`
         : "",
     ]
       .filter(Boolean)
       .map((value) => ` · ${value}`)
       .join("");
-    elements.stats.textContent = `${plural(filtered.nodes.length, "faculty member")} · ${plural(
+    const visibleFacultyCount = filtered.nodes.filter((node) => node.kind !== "external_coauthor").length;
+    const visibleExternalCount = filtered.nodes.length - visibleFacultyCount;
+    elements.stats.textContent = `${plural(visibleFacultyCount, "faculty member")}${
+      visibleExternalCount ? ` + ${plural(visibleExternalCount, "external coauthor")}` : ""
+    } · ${plural(
       filtered.edges.length,
       "connection",
     )} · ${plural(filtered.visibleWorkCount, "shared work")}${suffix}`;
@@ -584,7 +693,7 @@
     }
 
     const ranked = [...state.filtered.nodes]
-      .filter((node) => node.degree > 0)
+      .filter((node) => node.degree > 0 || node.hidden_external_connection)
       .sort((left, right) => right.strength - left.strength || right.degree - left.degree);
     let labelIds;
     if (selectedIds.size) {
@@ -611,7 +720,8 @@
         ),
       );
       const visibleRanked = ranked.filter((node) => {
-        if (!core.facultyLabelEligible(node, state.view.departments)) return false;
+        if (!node.hidden_external_connection
+          && !core.facultyLabelEligible(node, state.view.departments)) return false;
         const point = worldToScreen(node, now, transform);
         return (
           point.x >= viewport.left - 12 &&
@@ -623,6 +733,9 @@
       labelIds = new Set(
         visibleRanked.slice(0, labelLimit).map((node) => node.id),
       );
+      for (const node of visibleRanked) {
+        if (node.kind === "external_coauthor" || node.hidden_external_connection) labelIds.add(node.id);
+      }
     }
     if (state.hoveredId) labelIds.add(state.hoveredId);
 
@@ -633,9 +746,10 @@
       }
       const radius = nodeRadius(node);
       const related = !emphasisIds.size || neighborIds.has(node.id);
-      context.globalAlpha = related ? (node.degree ? 0.94 : 0.42) : 0.13;
-      context.fillStyle = node.degree
-        ? departmentColor(node.primary_department)
+      const mappedConnection = node.degree || node.hidden_external_connection;
+      context.globalAlpha = related ? (mappedConnection ? 0.94 : 0.42) : 0.13;
+      context.fillStyle = mappedConnection
+        ? nodeColor(node)
         : css("--canvas-unconnected");
       context.beginPath();
       context.arc(point.x, point.y, radius, 0, Math.PI * 2);
@@ -871,9 +985,7 @@
       return;
     }
     elements.canvas.style.cursor = "pointer";
-    const departmentNames = node.departments
-      .map((id) => state.graph.departmentById.get(id)?.short_title || id)
-      .join(" · ");
+    const departmentNames = nodeAffiliation(node);
     elements.tooltip.replaceChildren(
       element("strong", "", node.name),
       element(
@@ -900,6 +1012,12 @@
 
   function selectFaculty(nodeId, { openDetails = true, ensureSelected = false } = {}) {
     if (!state.graph.nodeById.has(nodeId)) return;
+    if (state.graph.nodeById.get(nodeId).kind === "external_coauthor") {
+      state.view.showExternal = true;
+      elements.showExternal.checked = true;
+      renderControls();
+      syncControls();
+    }
     const selectedIds = [...state.view.selectedIds];
     const selectedIndex = selectedIds.indexOf(nodeId);
     if (selectedIndex >= 0 && !ensureSelected) selectedIds.splice(selectedIndex, 1);
@@ -947,7 +1065,10 @@
     const connections = core.connectionsForNode(state.filtered, nodeId);
 
     const header = element("header", "detail-header");
-    header.append(element("p", "eyebrow", "Selected faculty"), element("h2", "detail-name", node.name));
+    header.append(
+      element("p", "eyebrow", node.kind === "external_coauthor" ? "External historical coauthor" : "Selected faculty"),
+      element("h2", "detail-name", node.name),
+    );
     const departmentList = element("div", "detail-departments");
     for (const departmentId of node.departments) {
       const department = state.graph.departmentById.get(departmentId);
@@ -956,10 +1077,16 @@
       chip.append(element("i"), document.createTextNode(department?.short_title || departmentId));
       departmentList.append(chip);
     }
+    if (node.kind === "external_coauthor") {
+      const chip = element("span", "department-chip");
+      chip.style.setProperty("--dot", nodeColor(node));
+      chip.append(element("i"), document.createTextNode("Outside CMU"));
+      departmentList.append(chip);
+    }
     header.append(departmentList);
     const links = element("div", "detail-links");
     for (const [label, url] of [
-      ["Homepage ↗", node.homepage_url],
+      [node.kind === "external_coauthor" ? "Coauthor source ↗" : "Homepage ↗", node.homepage_url],
       ["Scholar ↗", node.scholar_url],
       ["ORCID ↗", node.orcid_url],
     ]) {
@@ -986,13 +1113,19 @@
     );
     elements.detailContent.append(heading);
     if (!connections.length) {
+      const hiddenExternalConnection = !state.view.showExternal
+        && filteredNode.hidden_external_connection;
       elements.detailContent.append(
         element(
           "p",
           "detail-no-links",
-          node.mapped_publication_count
+          hiddenExternalConnection
+            ? "A verified historical coauthor connection is hidden. Turn on Show Erdős to inspect the shared works."
+            : node.mapped_publication_count
             ? "No connections meet the current year, department, and strength filters."
-            : "No mapped publications are available for this faculty member in the source artifact.",
+            : node.kind === "external_coauthor"
+              ? "No verified shared works are available for this external coauthor in the source artifact."
+              : "No mapped publications are available for this faculty member in the source artifact.",
         ),
       );
       return;
@@ -1011,18 +1144,16 @@
     const selection = core.subgraphForSelection(state.filtered, selectedIds);
     const header = element("header", "detail-header");
     header.append(
-      element("p", "eyebrow", "Selected faculty"),
-      element("h2", "detail-name", `${plural(selectedNodes.length, "faculty member")} selected`),
+      element("p", "eyebrow", hasExternalCoauthors() ? "Selected people" : "Selected faculty"),
+      element("h2", "detail-name", `${plural(selectedNodes.length, hasExternalCoauthors() ? "person" : "faculty member")} selected`),
     );
     const roster = element("ul", "detail-selection-list");
     for (const node of selectedNodes) {
       const item = element("li");
       const dot = element("span", "legend-dot");
-      dot.style.setProperty("--dot", departmentColor(node.primary_department));
+      dot.style.setProperty("--dot", nodeColor(node));
       dot.setAttribute("aria-hidden", "true");
-      const departmentNames = node.departments
-        .map((id) => state.graph.departmentById.get(id)?.short_title || id)
-        .join(" · ");
+      const departmentNames = nodeAffiliation(node);
       item.append(dot, element("strong", "", node.name), element("small", "", departmentNames));
       roster.append(item);
     }
@@ -1030,7 +1161,7 @@
     elements.detailContent.append(header);
 
     appendDetailMetrics([
-      [selectedNodes.length, "selected faculty"],
+      [selectedNodes.length, hasExternalCoauthors() ? "selected people" : "selected faculty"],
       [selection.edges.length, "visible connections"],
       [selection.visibleWorkCount, "unique shared works"],
     ]);
@@ -1046,7 +1177,9 @@
         element(
           "p",
           "detail-no-links",
-          "No connections involving the selected faculty meet the current year, department, and strength filters.",
+          hasExternalCoauthors()
+            ? "No connections involving the selected people meet the current year, department, and strength filters."
+            : "No connections involving the selected faculty meet the current year, department, and strength filters.",
         ),
       );
       return;
@@ -1071,7 +1204,7 @@
       button.dataset.edgeId = connection.id;
       button.setAttribute("aria-expanded", String(state.expandedEdgeId === connection.id));
       const dot = element("span", "legend-dot");
-      dot.style.setProperty("--dot", departmentColor(colorNode.primary_department));
+      dot.style.setProperty("--dot", nodeColor(colorNode));
       dot.setAttribute("aria-hidden", "true");
       button.append(
         dot,
@@ -1104,8 +1237,26 @@
         Number.isInteger(work.year) ? work.year : "Undated",
         work.topic,
         work.citations ? plural(work.citations, "citation") : "",
+        work.source_types?.includes("curated_verified")
+          && !work.source_types.includes("scholar")
+          ? "Citation count unavailable"
+          : "",
+        work.source_types?.includes("curated_verified")
+          ? work.source_types.includes("scholar")
+            ? "Scholar record and source verified"
+            : "Source verified; not collected from Google Scholar"
+          : "",
+        work.source_verified_at ? `verified ${work.source_verified_at}` : "",
       ].filter(Boolean);
       item.append(element("span", "publication-meta", details.join(" · ")));
+      for (const [index, sourceUrl] of (work.source_verification_urls || []).entries()) {
+        if (sourceUrl === work.url) continue;
+        const sourceLink = element("a", "publication-source", `Verification source ${index + 1} ↗`);
+        sourceLink.href = sourceUrl;
+        sourceLink.target = "_blank";
+        sourceLink.rel = "noopener noreferrer";
+        item.append(sourceLink);
+      }
       list.append(item);
     }
     return list;
@@ -1118,8 +1269,8 @@
     elements.selectedFaculty.replaceChildren();
     elements.selectedFaculty.hidden = selectedNodes.length === 0;
     elements.facultySearch.placeholder = selectedNodes.length
-      ? "Add another faculty member"
-      : `Search ${formatNumber(state.graph?.nodes.length)} faculty`;
+      ? hasExternalCoauthors() ? "Add another person" : "Add another faculty member"
+      : `Search ${formatNumber(state.graph?.nodes.length)} ${hasExternalCoauthors() ? "people" : "faculty"}`;
     for (const node of selectedNodes) {
       const item = element("li");
       const name = element("span", "", node.name);
@@ -1150,7 +1301,9 @@
       const empty = element(
         "li",
         "suggestion-empty",
-        "No additional faculty match this search.",
+        hasExternalCoauthors()
+          ? "No additional people match this search."
+          : "No additional faculty match this search.",
       );
       elements.facultySuggestions.append(empty);
     } else {
@@ -1161,9 +1314,7 @@
         button.type = "button";
         button.dataset.facultyId = node.id;
         button.setAttribute("aria-selected", String(index === state.activeSuggestion));
-        const department = node.departments
-          .map((id) => state.graph.departmentById.get(id)?.short_title || id)
-          .join(" · ");
+        const department = nodeAffiliation(node);
         button.append(
           element("span", "", node.name),
           element(
@@ -1239,7 +1390,9 @@
     const url = URL.createObjectURL(blob);
     const link = element("a");
     link.href = url;
-    link.download = "cmu-engineering-collaborations.csv";
+    link.download = state.graph.schools.length > 1
+      ? "cmu-collaborations.csv"
+      : "cmu-engineering-collaborations.csv";
     document.body.append(link);
     link.click();
     link.remove();
@@ -1387,6 +1540,12 @@
       if (!event.target.closest(".faculty-field")) closeSuggestions();
     });
 
+    elements.schoolOptions.addEventListener("change", () => {
+      state.view.schools = [...elements.schoolOptions.querySelectorAll("input:checked")].map(
+        (input) => input.value,
+      );
+      applyView({ fit: true, animate: true });
+    });
     elements.departmentOptions.addEventListener("change", () => {
       state.view.departments = [...elements.departmentOptions.querySelectorAll("input:checked")].map(
         (input) => input.value,
@@ -1426,8 +1585,22 @@
       state.view.crossDepartment = elements.crossDepartment.checked;
       applyView({ fit: true, animate: true });
     });
+    elements.crossSchool.addEventListener("change", () => {
+      state.view.crossSchool = elements.crossSchool.checked;
+      applyView({ fit: true, animate: true });
+    });
     elements.showUnconnected.addEventListener("change", () => {
       state.view.showUnconnected = elements.showUnconnected.checked;
+      applyView({ fit: true, animate: true });
+    });
+    elements.showExternal.addEventListener("change", () => {
+      state.view.showExternal = elements.showExternal.checked;
+      if (!state.view.showExternal) {
+        state.view.selectedIds = state.view.selectedIds.filter((id) =>
+          state.graph.nodeById.get(id)?.kind !== "external_coauthor");
+      }
+      renderControls();
+      syncControls();
       applyView({ fit: true, animate: true });
     });
     elements.layoutOptions.addEventListener("change", (event) => {

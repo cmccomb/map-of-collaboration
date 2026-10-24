@@ -12,17 +12,28 @@ const GRAPH_SCHEMA_VERSION = 1;
 const EXPECTED_SOURCE_SCHEMA = 7;
 
 const DEPARTMENT_PRESENTATION = Object.freeze({
+  bio: { short_title: "Bio", color_dark: "#8edca4", color_light: "#2c8952" },
   bme: { short_title: "BME", color_dark: "#ff9f8b", color_light: "#b94331" },
+  cbd: { short_title: "CBD", color_dark: "#b9df8a", color_light: "#648b2b" },
+  chem: { short_title: "Chem", color_dark: "#e6d37d", color_light: "#806d18" },
   cheme: { short_title: "ChemE", color_dark: "#73c5df", color_light: "#14738e" },
   civil: { short_title: "CEE", color_dark: "#ffc36f", color_light: "#9b6217" },
   "cmu-africa": { short_title: "Africa", color_dark: "#91d4a5", color_light: "#30774a" },
   "cmu-silicon-valley": { short_title: "Silicon Valley", color_dark: "#b6a7ec", color_light: "#624ea2" },
+  csd: { short_title: "CSD", color_dark: "#9db4ff", color_light: "#475faa" },
   ece: { short_title: "ECE", color_dark: "#f39dca", color_light: "#a63f76" },
   epp: { short_title: "EPP", color_dark: "#dcaa91", color_light: "#8d573d" },
+  hcii: { short_title: "HCII", color_dark: "#ffb8d7", color_light: "#a24370" },
   iii: { short_title: "iii", color_dark: "#80d6cf", color_light: "#247c76" },
   ini: { short_title: "INI", color_dark: "#d5d279", color_light: "#777518" },
+  lti: { short_title: "LTI", color_dark: "#b8a7ff", color_light: "#6954b3" },
+  math: { short_title: "Math", color_dark: "#f6a7a0", color_light: "#a64742" },
   mech: { short_title: "MechE", color_dark: "#66b5ff", color_light: "#1769a8" },
+  mld: { short_title: "MLD", color_dark: "#81d7f0", color_light: "#197d9d" },
   mse: { short_title: "MSE", color_dark: "#c4a0e8", color_light: "#75509b" },
+  physics: { short_title: "Physics", color_dark: "#a8cbd0", color_light: "#437d84" },
+  ri: { short_title: "RI", color_dark: "#f8b683", color_light: "#a95a22" },
+  s3d: { short_title: "S3D", color_dark: "#e4a5ea", color_light: "#9b4e9f" },
 });
 
 function assert(condition, message) {
@@ -285,9 +296,30 @@ function deriveGraph(artifact, config, revision) {
   });
   const departmentIds = new Set(departments.map((department) => department.department_id));
   const departmentById = new Map(departments.map((department) => [department.department_id, department]));
+  const hasSchoolCatalog = Array.isArray(artifact.catalogs.schools);
+  const schools = hasSchoolCatalog
+    ? artifact.catalogs.schools.map((school) => ({
+        school_id: String(school.school_id || ""),
+        title: String(school.title || ""),
+        directory_url: String(school.directory_url || ""),
+        faculty_count: 0,
+      }))
+    : [{ school_id: "engineering", title: "College of Engineering", directory_url: "", faculty_count: 0 }];
+  const schoolIds = new Set(schools.map((school) => school.school_id));
+  assert(schools.length > 0 && schools.every((school) => school.school_id && school.title),
+    "Publication artifact has invalid schools");
+  assert(schoolIds.size === schools.length, "Publication artifact has duplicate school IDs");
+  const schoolById = new Map(schools.map((school) => [school.school_id, school]));
+  departments.forEach((department, index) => {
+    const schoolId = hasSchoolCatalog
+      ? String(artifact.catalogs.departments[index].school_id || "")
+      : "engineering";
+    assert(schoolIds.has(schoolId), `Department ${department.department_id} has an invalid school`);
+    department.school_id = schoolId;
+  });
 
   const facultyIds = new Set();
-  const nodes = artifact.catalogs.faculty.map((person) => {
+  const facultyNodes = artifact.catalogs.faculty.map((person) => {
     const id = String(person.person_id || "");
     assert(id && !facultyIds.has(id), `Duplicate or invalid faculty ID: ${id}`);
     facultyIds.add(id);
@@ -303,11 +335,23 @@ function deriveGraph(artifact, config, revision) {
     personDepartments.forEach((departmentId) => {
       departmentById.get(departmentId).faculty_count += 1;
     });
+    const personSchools = hasSchoolCatalog
+      ? [...new Set((Array.isArray(person.school_ids) ? person.school_ids : []).map(String))]
+      : ["engineering"];
+    assert(personSchools.length > 0 && personSchools.every((schoolId) => schoolIds.has(schoolId)),
+      `Faculty ${id} has invalid school memberships`);
+    assert(personDepartments.every((departmentId) => personSchools.includes(departmentById.get(departmentId).school_id)),
+      `Faculty ${id} has a department outside their schools`);
+    personSchools.forEach((schoolId) => {
+      schoolById.get(schoolId).faculty_count += 1;
+    });
     return {
       id,
       name: String(person.display_name || id),
       departments: personDepartments,
       primary_department: personDepartments[0],
+      school_ids: personSchools,
+      primary_school: personSchools[0],
       roles: [...new Set(memberships.map((membership) => String(membership.role || "faculty")))],
       publication_count: Math.max(0, Number(person.publication_count) || 0),
       mapped_publication_count: 0,
@@ -320,6 +364,39 @@ function deriveGraph(artifact, config, revision) {
       y: 0,
     };
   });
+  const externalCatalog = artifact.catalogs.external_coauthors || [];
+  assert(Array.isArray(externalCatalog), "Publication artifact has invalid external coauthors");
+  const externalIds = new Set();
+  const externalNodes = externalCatalog.map((person) => {
+    const id = String(person.person_id || "");
+    assert(id && !facultyIds.has(id) && !externalIds.has(id),
+      `Duplicate or invalid external coauthor ID: ${id}`);
+    externalIds.add(id);
+    const name = String(person.display_name || "").trim();
+    const sourceUrl = String(person.source_url || "");
+    assert(name && safeSourceUrl({ source_url: sourceUrl }),
+      `External coauthor ${id} needs a name and public source URL`);
+    return {
+      id,
+      kind: "external_coauthor",
+      name,
+      departments: [],
+      primary_department: "",
+      school_ids: [],
+      primary_school: "",
+      roles: [],
+      publication_count: 0,
+      mapped_publication_count: 0,
+      collaborator_count: 0,
+      collaboration_count: 0,
+      homepage_url: sourceUrl,
+      scholar_url: "",
+      orcid_url: "",
+      x: 0,
+      y: 0,
+    };
+  });
+  const nodes = [...facultyNodes, ...externalNodes];
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const keywordById = new Map(
     (artifact.keywords || []).map((keyword) => [keyword.keyword_id, keyword.label]),
@@ -330,6 +407,7 @@ function deriveGraph(artifact, config, revision) {
   let multipleFacultyWorkCount = 0;
   let invalidFacultyReferenceCount = 0;
   let duplicateFacultyReferenceCount = 0;
+  let duplicateExternalReferenceCount = 0;
 
   for (const point of artifact.points) {
     const workId = String(point.work_id || "");
@@ -345,8 +423,29 @@ function deriveGraph(artifact, config, revision) {
       return false;
     });
     assert(validFaculty.length > 0, `Work ${workId} has no valid faculty relationship`);
+    const originalExternal = Array.isArray(point.external_coauthor_ids)
+      ? point.external_coauthor_ids.map(String)
+      : [];
+    const pointExternal = [...new Set(originalExternal)];
+    duplicateExternalReferenceCount += originalExternal.length - pointExternal.length;
+    assert(pointExternal.every((id) => externalIds.has(id)),
+      `Work ${workId} has an unknown external coauthor`);
+    if (pointExternal.length) {
+      assert(Array.isArray(point.source_types) && point.source_types.includes("curated_verified"),
+        `Work ${workId} has an external coauthor without verified source type`);
+      assert(Array.isArray(point.source_verification_urls)
+        && point.source_verification_urls.some((url) => safeSourceUrl({ source_url: url })),
+      `Work ${workId} has an external coauthor without a public verification URL`);
+    }
+    if (Array.isArray(point.school_ids)) {
+      assert(point.school_ids.every((schoolId) => schoolIds.has(String(schoolId))),
+        `Work ${workId} has invalid school references`);
+    }
     validFaculty.forEach((facultyId) => {
       nodeById.get(facultyId).mapped_publication_count += 1;
+    });
+    pointExternal.forEach((id) => {
+      nodeById.get(id).mapped_publication_count += 1;
     });
     const year = Number.isInteger(point.year) ? point.year : null;
     if (year === null) missingYearCount += 1;
@@ -362,21 +461,39 @@ function deriveGraph(artifact, config, revision) {
       citations: Math.max(0, Number(point.citation_count) || 0),
       doi: String(point.doi || ""),
       url: safeSourceUrl(point),
-      topic: String(keywordById.get(detailedTopicId) || ""),
+      ...(Array.isArray(point.source_types) && point.source_types.includes("curated_verified")
+        ? { source_types: [...new Set(point.source_types.map(String))] }
+        : {}),
+      ...(point.source_verified_at
+        ? { source_verified_at: String(point.source_verified_at) }
+        : {}),
+      ...(Array.isArray(point.source_verification_urls) && point.source_verification_urls.length
+        ? { source_verification_urls: [...new Set(point.source_verification_urls.map(String))] }
+        : {}),
+      topic: point.source_types?.includes("curated_verified")
+        && !point.source_types.includes("scholar")
+        ? ""
+        : String(keywordById.get(detailedTopicId) || ""),
     };
-    validFaculty.sort();
-    for (let left = 0; left < validFaculty.length; left += 1) {
-      for (let right = left + 1; right < validFaculty.length; right += 1) {
-        const source = validFaculty[left];
-        const target = validFaculty[right];
+    const includedAuthors = [...validFaculty, ...pointExternal].sort();
+    for (let left = 0; left < includedAuthors.length; left += 1) {
+      for (let right = left + 1; right < includedAuthors.length; right += 1) {
+        const source = includedAuthors[left];
+        const target = includedAuthors[right];
+        if (externalIds.has(source) && externalIds.has(target)) continue;
         const key = canonicalEdgeKey(source, target);
         if (!edgeMap.has(key)) {
+          const bothFaculty = facultyIds.has(source) && facultyIds.has(target);
           edgeMap.set(key, {
             source,
             target,
-            cross_department: !intersections(
+            cross_department: bothFaculty && !intersections(
               nodeById.get(source).departments,
               nodeById.get(target).departments,
+            ),
+            cross_school: bothFaculty && !intersections(
+              nodeById.get(source).school_ids,
+              nodeById.get(target).school_ids,
             ),
             works: [],
           });
@@ -388,6 +505,7 @@ function deriveGraph(artifact, config, revision) {
 
   assert(invalidFacultyReferenceCount === 0, "Publication artifact has invalid faculty references");
   assert(duplicateFacultyReferenceCount === 0, "Publication artifact has duplicate faculty references");
+  assert(duplicateExternalReferenceCount === 0, "Publication artifact has duplicate external references");
   const edges = [...edgeMap.values()]
     .map((edge) => ({
       ...edge,
@@ -424,8 +542,8 @@ function deriveGraph(artifact, config, revision) {
   const datedYears = artifact.points
     .map((point) => point.year)
     .filter(Number.isInteger);
-  const mappedFacultyCount = nodes.filter((node) => node.mapped_publication_count > 0).length;
-  const connectedFacultyCount = nodes.filter((node) => node.collaborator_count > 0).length;
+  const mappedFacultyCount = facultyNodes.filter((node) => node.mapped_publication_count > 0).length;
+  const connectedFacultyCount = facultyNodes.filter((node) => node.collaborator_count > 0).length;
   const pairWorkCount = edges.reduce((sum, edge) => sum + edge.works.length, 0);
 
   return {
@@ -447,20 +565,23 @@ function deriveGraph(artifact, config, revision) {
       invalid_faculty_reference_count: invalidFacultyReferenceCount,
       duplicate_faculty_reference_count: duplicateFacultyReferenceCount,
       missing_year_count: missingYearCount,
-      coverage_note:
-        "A missing edge means no shared work was observed between two cataloged faculty IDs in this artifact; it does not establish that no collaboration exists.",
+      coverage_note: externalNodes.length
+        ? "External coauthors are a selected, source-verified subset, not a comprehensive outside-collaborator graph. A missing edge means no shared work was observed among indexed people in this artifact; it does not establish that no collaboration exists."
+        : "A missing edge means no shared work was observed between two cataloged faculty IDs in this artifact; it does not establish that no collaboration exists.",
     },
     counts: {
       work_count: artifact.points.length,
-      faculty_count: nodes.length,
+      faculty_count: facultyNodes.length,
       mapped_faculty_count: mappedFacultyCount,
       connected_faculty_count: connectedFacultyCount,
       mapped_without_collaboration_count: mappedFacultyCount - connectedFacultyCount,
-      unmapped_faculty_count: nodes.length - mappedFacultyCount,
+      unmapped_faculty_count: facultyNodes.length - mappedFacultyCount,
+      ...(externalNodes.length ? { external_coauthor_count: externalNodes.length } : {}),
       edge_count: edges.length,
       multiple_faculty_work_count: multipleFacultyWorkCount,
       pair_work_count: pairWorkCount,
       cross_department_edge_count: edges.filter((edge) => edge.cross_department).length,
+      cross_school_edge_count: edges.filter((edge) => edge.cross_school).length,
     },
     years: {
       minimum: Math.min(...datedYears),
@@ -468,6 +589,7 @@ function deriveGraph(artifact, config, revision) {
       missing_count: missingYearCount,
     },
     departments,
+    schools,
     nodes: nodes.sort((left, right) => left.name.localeCompare(right.name)),
     edges,
   };
