@@ -237,7 +237,10 @@
       }
       renderControls();
       syncControls();
-      applyView({ fit: true, updateUrl: core.hasSchoolFocus(state.view) });
+      applyView({
+        fit: true,
+        updateUrl: core.hasSchoolFocus(state.view) || Boolean(state.view.departments.length),
+      });
       const counts = state.graph.counts;
       elements.status.textContent = `${plural(counts.faculty_count, "faculty member")}${
         counts.external_coauthor_count
@@ -351,14 +354,18 @@
 
   function renderScopeCopy() {
     const schoolFocused = core.hasSchoolFocus(state.view);
-    elements.facultySearchNote.textContent = schoolFocused
-      ? "Search selected-school faculty and linked historical coauthors, including people without mapped works. Connected faculty appear by default."
+    const departmentFocused = Boolean(state.view.departments.length);
+    const scopeLabel = schoolFocused && departmentFocused
+      ? "selected schools and units"
+      : schoolFocused ? "selected schools" : "selected units";
+    elements.facultySearchNote.textContent = schoolFocused || departmentFocused
+      ? `Search faculty in the ${scopeLabel}, plus linked historical coauthors. Connected faculty appear by default.`
       : `Search all ${plural(
           state.graph.counts.faculty_count,
           "cataloged faculty member",
         )} across CMU schools and academic units, including people without mapped works. Connected faculty appear on the graph by default.`;
-    document.querySelector("#canvas-instructions").textContent = schoolFocused
-      ? "Drag to pan, use the mouse wheel or zoom buttons to zoom, and select nodes to inspect shared works. Search selected-school faculty and linked historical coauthors."
+    document.querySelector("#canvas-instructions").textContent = schoolFocused || departmentFocused
+      ? `Drag to pan, use the mouse wheel or zoom buttons to zoom, and select nodes to inspect shared works. Search faculty in the ${scopeLabel}.`
       : "Drag to pan, use the mouse wheel or zoom buttons to zoom, and select nodes to compare observed collaborators. Select a node again to remove it. Search to reach every person.";
   }
 
@@ -445,7 +452,7 @@
         )
       : new Map();
     updateLegendAffiliation();
-    if (core.hasSchoolFocus(state.view)) {
+    if (core.hasSchoolFocus(state.view) || state.view.departments.length) {
       state.view.selectedIds = state.view.selectedIds.filter((id) => state.filtered.nodeIds.has(id));
     }
     renderExternalLegend();
@@ -1414,8 +1421,8 @@
       .filter(Boolean);
     elements.selectedFaculty.replaceChildren();
     elements.selectedFaculty.hidden = selectedNodes.length === 0;
-    const searchScope = core.hasSchoolFocus(state.view)
-      ? "school faculty and linked coauthors"
+    const searchScope = core.hasSchoolFocus(state.view) || state.view.departments.length
+      ? "selected faculty and linked coauthors"
       : `${formatNumber(state.graph?.nodes.length)} ${hasExternalCoauthors() ? "people" : "faculty"}`;
     elements.facultySearch.placeholder = selectedNodes.length
       ? hasExternalCoauthors() ? "Add another person" : "Add another faculty member"
@@ -1439,8 +1446,8 @@
       query,
       state.graph.nodes.length,
       state.view.selectedIds,
-    ).filter((node) => !core.hasSchoolFocus(state.view)
-      || core.schoolEligible(state.graph, node, state.view.schools)).slice(0, 9);
+    ).filter((node) => core.scopeEligible(
+      state.graph, node, state.view.departments, state.view.schools)).slice(0, 9);
     state.activeSuggestion = state.suggestionNodes.length ? 0 : -1;
     elements.facultySuggestions.replaceChildren();
     if (!query.trim()) {
@@ -1519,6 +1526,7 @@
     elements.facultySearch.value = "";
     closeSuggestions();
     syncControls();
+    renderScopeCopy();
     applyView({ fit: true });
   }
 
@@ -1584,7 +1592,7 @@
       if (elements.facultySearch.value) renderSuggestions();
       applyView({
         fit: true,
-        updateUrl: core.hasSchoolFocus(state.view),
+        updateUrl: core.hasSchoolFocus(state.view) || Boolean(state.view.departments.length),
         animate: true,
       });
     });
@@ -1712,6 +1720,8 @@
       state.view.departments = [...elements.departmentOptions.querySelectorAll("input:checked")].map(
         (input) => input.value,
       );
+      renderScopeCopy();
+      if (elements.facultySearch.value) renderSuggestions();
       applyView({ fit: true, animate: true });
     });
     elements.departmentLegend.addEventListener("click", (event) => {
@@ -1719,6 +1729,8 @@
       if (!button) return;
       state.view.departments = [button.dataset.departmentId];
       syncControls();
+      renderScopeCopy();
+      if (elements.facultySearch.value) renderSuggestions();
       applyView({ fit: true, animate: true });
       if (window.matchMedia("(max-width: 820px)").matches) openMobilePanel("legend");
     });

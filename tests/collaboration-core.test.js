@@ -615,8 +615,10 @@ test("department filtering, unconnected inclusion, and selection compose", () =>
   assert.equal(filtered.edges.length, 0);
   assert.deepEqual(
     filtered.nodes.map((node) => node.id).sort(),
-    ["a", "b", "c"],
+    ["a", "b"],
   );
+  assert.deepEqual(core.stateFromSearch("?departments=one&faculty=c,a", graph).selectedIds,
+    ["a"]);
 });
 
 test("URL state is bounded and round-trips", () => {
@@ -639,11 +641,11 @@ test("URL state is bounded and round-trips", () => {
     layout: "department-force",
     departmentSpacing: 5,
     schoolSpacing: 0,
-    selectedIds: ["c", "a"],
+    selectedIds: ["c"],
   });
   assert.equal(
     core.stateToSearch(state, graph),
-    "?departments=two&minimum=20&cross=1&unconnected=1&layout=department-force&spacing=5&faculty=c%2Ca",
+    "?departments=two&minimum=20&cross=1&unconnected=1&layout=department-force&spacing=5&faculty=c",
   );
   assert.deepEqual(core.stateFromSearch("?faculty=b", graph).selectedIds, ["b"]);
   assert.deepEqual(core.stateFromSearch("?from=2024&to=2020", graph), {
@@ -919,12 +921,19 @@ test("school and college distance separates display groups, including joint appo
 
 test("whole-CMU force view forms Engineering, MCS, and separate SCS departments", () => {
   const value = schoolGridFixture();
+  value.departments[0].department_id = "mech";
+  value.departments[1].department_id = "csd";
+  value.nodes.forEach((node) => {
+    node.departments = node.departments.map((id) =>
+      id === "one" ? "mech" : id === "two" ? "csd" : id);
+    node.primary_department = node.primary_department === "one" ? "mech" : "csd";
+  });
   value.schools.push({ school_id: "mcs", title: "Mellon College of Science" });
   value.departments.push(
     { department_id: "s3d", title: "Software and Societal Systems", school_id: "scs" },
     { department_id: "math", title: "Mathematical Sciences", school_id: "mcs" },
   );
-  value.nodes.find((node) => node.id === "e").departments = ["one", "s3d"];
+  value.nodes.find((node) => node.id === "e").departments = ["mech", "s3d"];
   value.nodes.push(
     { ...value.nodes.find((node) => node.id === "e"), id: "f", name: "S3D colleague",
       primary_department: "s3d", primary_school: "scs" },
@@ -943,10 +952,36 @@ test("whole-CMU force view forms Engineering, MCS, and separate SCS departments"
   const graph = core.parseGraph(value);
   const filtered = core.filterGraph(graph, core.defaultState(graph));
   const assigned = core.forceDepartmentAssignments(filtered, graph, 10);
-  assert.equal(assigned.get("e"), "one");
+  assert.equal(assigned.get("e"), "mech");
   assert.equal(assigned.get("f"), "s3d");
-  assert.equal(assigned.get("c"), "two");
+  assert.equal(assigned.get("c"), "csd");
   assert.equal(assigned.get("g"), "math");
+
+  for (const layout of ["collaboration", "department-force", "departments"]) {
+    const suffix = layout === "collaboration" ? "" : `&layout=${layout}`;
+    for (const [scope, expected, insider, outsider] of [
+      ["schools=mcs", ["g", "h"], "g", "a"],
+      ["schools=engineering", ["a", "b", "e", "f"], "a", "g"],
+      ["departments=mech", ["a", "b", "e", "f"], "e", "c"],
+      ["schools=scs", ["c", "d", "e", "f"], "e", "g"],
+    ]) {
+      const scoped = core.filterGraph(graph, core.stateFromSearch(`?${scope}${suffix}`, graph));
+      assert.deepEqual(scoped.nodes.map((node) => node.id).sort(), expected,
+        `${scope} leaked a neighboring collaborator in ${layout}`);
+      assert(scoped.edges.every((edge) =>
+        scoped.nodeIds.has(edge.source) && scoped.nodeIds.has(edge.target)));
+      const selected = core.stateFromSearch(
+        `?${scope}${suffix}&faculty=${outsider},${insider}`, graph);
+      assert.deepEqual(selected.selectedIds, [insider]);
+      assert.equal(core.scopeEligible(graph, graph.nodeById.get(outsider),
+        selected.departments, selected.schools), false,
+      `${scope} offered an outside faculty member in Add people`);
+      assert.equal(core.scopeEligible(graph, graph.nodeById.get(insider),
+        selected.departments, selected.schools), true);
+      assert.deepEqual(core.filterGraph(graph, selected).nodes.map((node) => node.id).sort(),
+        expected, `${scope} leaked a stale selection in ${layout}`);
+    }
+  }
 
   const positions = core.departmentForceLayout(filtered, graph, 1, [], 10);
   const center = (ids) => ({

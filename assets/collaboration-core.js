@@ -381,15 +381,33 @@
     });
   }
 
+  function scopeEligible(graph, node, selectedDepartmentIds = [], selectedSchoolIds = []) {
+    const departments = new Set(selectedDepartmentIds);
+    const schools = new Set(selectedSchoolIds);
+    const facultyEligible = (person) =>
+      (!departments.size || person.departments.some((id) => departments.has(id)))
+      && (!schools.size || person.school_ids.some((id) => schools.has(id)));
+    if (node.kind !== "external_coauthor") return facultyEligible(node);
+    if (!departments.size && !schools.size) return true;
+    return graph.edges.some((edge) => {
+      if (edge.source !== node.id && edge.target !== node.id) return false;
+      const other = graph.nodeById.get(edge.source === node.id ? edge.target : edge.source);
+      return Boolean(other) && other.kind !== "external_coauthor" && facultyEligible(other);
+    });
+  }
+
   function normalizeView(state, graph) {
-    if (!hasSchoolFocus(state)) return state;
-    const selectedSchools = new Set(state.schools);
+    const selectedSchools = new Set(state.schools || []);
+    const departments = selectedSchools.size
+      ? (state.departments || []).filter((id) =>
+          selectedSchools.has(graph.departmentById.get(id)?.school_id))
+      : state.departments || [];
+    if (!selectedSchools.size && !departments.length) return state;
     return {
       ...state,
-      departments: (state.departments || []).filter((id) =>
-        selectedSchools.has(graph.departmentById.get(id)?.school_id)),
+      departments,
       selectedIds: validFacultyIds(state.selectedIds || [], graph).filter((id) =>
-        schoolEligible(graph, graph.nodeById.get(id), selectedSchools)),
+        scopeEligible(graph, graph.nodeById.get(id), departments, selectedSchools)),
     };
   }
 
@@ -1306,6 +1324,7 @@
     normalizeView,
     parseGraph,
     safeExternalUrl,
+    scopeEligible,
     selectionLayout,
     stateFromSearch,
     stateToSearch,
