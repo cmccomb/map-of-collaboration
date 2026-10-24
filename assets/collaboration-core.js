@@ -342,6 +342,13 @@
       .map(({ node }) => node);
   }
 
+  function facultyLabelEligible(node, selectedDepartmentIds = []) {
+    const departments = uniqueStrings(node?.departments);
+    if (departments.length <= 1) return true;
+    const selectedDepartments = new Set(uniqueStrings(selectedDepartmentIds));
+    return departments.some((departmentId) => selectedDepartments.has(departmentId));
+  }
+
   function connectionsForNode(filtered, nodeId) {
     return filtered.edges
       .filter((edge) => edge.source === nodeId || edge.target === nodeId)
@@ -760,6 +767,7 @@
     edgeKey,
     edgeCrossingCount,
     edgesToCsv,
+    facultyLabelEligible,
     facultyMatches,
     filterGraph,
     parseGraph,

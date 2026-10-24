@@ -344,6 +344,16 @@ test("faculty search considers names and departments", () => {
   assert.equal(core.facultyMatches(graph, "One", 1).length, 1);
 });
 
+test("automatic labels require an explicit department for cross-appointed faculty", () => {
+  assert.equal(core.facultyLabelEligible({ departments: ["one"] }), true);
+  assert.equal(core.facultyLabelEligible({ departments: ["one", "two"] }), false);
+  assert.equal(
+    core.facultyLabelEligible({ departments: ["one", "two"] }, ["missing"]),
+    false,
+  );
+  assert.equal(core.facultyLabelEligible({ departments: ["one", "two"] }, ["two"]), true);
+});
+
 test("multi-selection builds the union of selected neighborhoods", () => {
   const graph = core.parseGraph(fixture());
   const filtered = core.filterGraph(graph, core.defaultState(graph));

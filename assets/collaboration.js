@@ -554,6 +554,7 @@
       const neighborLimit = Math.max(0, (compact ? 8 : 20) - selectedIds.size);
       const neighbors = selection.nodes
         .filter((node) => !selectedIds.has(node.id))
+        .filter((node) => core.facultyLabelEligible(node, state.view.departments))
         .sort((left, right) => right.strength - left.strength || right.degree - left.degree)
         .slice(0, neighborLimit)
         .map((node) => node.id);
@@ -571,6 +572,7 @@
         ),
       );
       const visibleRanked = ranked.filter((node) => {
+        if (!core.facultyLabelEligible(node, state.view.departments)) return false;
         const point = worldToScreen(node, now, transform);
         return (
           point.x >= viewport.left - 12 &&
