@@ -174,6 +174,105 @@ test("deriveGraph keeps cross-school coauthorship and cross-appointed faculty di
   assert.equal(graph.schools.find((school) => school.school_id === "scs").faculty_count, 2);
 });
 
+test("deriveGraph adds only verified external coauthor edges without changing CMU faculty counts", () => {
+  const artifact = schoolArtifactFixture();
+  artifact.catalogs.schools.push({ school_id: "mcs", title: "Mellon College of Science" });
+  artifact.catalogs.departments.push({
+    department_id: "math",
+    school_id: "mcs",
+    title: "Mathematical Sciences",
+  });
+  artifact.catalogs.faculty[0] = {
+    ...artifact.catalogs.faculty[0],
+    display_name: "Prasad Tetali",
+    memberships: [{ department_id: "math", role: "faculty" }],
+    school_ids: ["mcs"],
+  };
+  artifact.catalogs.external_coauthors = [{
+    person_id: "external-paul-erdos",
+    display_name: "Paul Erdős",
+    source_url: "https://sites.google.com/oakland.edu/grossman/home/the-erdoes-number-project",
+  }];
+  artifact.points = [
+    {
+      work_id: "1990-paper",
+      title: "Representations of integers as the sum of k terms",
+      faculty_ids: ["a"],
+      external_coauthor_ids: ["external-paul-erdos"],
+      school_ids: ["mcs"],
+      year: 1990,
+      doi: "10.1002/rsa.3240010302",
+      source_types: ["curated_verified"],
+      source_verified_at: "2026-10-24",
+      source_verification_urls: ["https://doi.org/10.1002/rsa.3240010302"],
+      keyword_ids: ["topic-1"],
+    },
+    {
+      work_id: "1995-paper",
+      title: "Independence of solution sets and minimal asymptotic bases",
+      faculty_ids: ["a"],
+      external_coauthor_ids: ["external-paul-erdos"],
+      school_ids: ["mcs"],
+      year: 1995,
+      doi: "10.4064/aa-69-3-243-258",
+      source_types: ["curated_verified"],
+      source_verified_at: "2026-10-24",
+      source_verification_urls: ["https://www.impan.pl/en/publishing-house/journals-and-series/acta-arithmetica/all/69/3/108504/independence-of-solution-sets-and-minimal-asymptotic-bases"],
+    },
+  ];
+  const graph = build.deriveGraph(artifact, config, "a".repeat(40));
+  const erdos = graph.nodes.find((node) => node.id === "external-paul-erdos");
+  assert.equal(erdos.kind, "external_coauthor");
+  assert.deepEqual(erdos.departments, []);
+  assert.deepEqual(erdos.school_ids, []);
+  assert.equal(erdos.mapped_publication_count, 2);
+  assert.equal(graph.counts.faculty_count, 3);
+  assert.equal(graph.counts.external_coauthor_count, 1);
+  assert.equal(graph.counts.mapped_faculty_count, 1);
+  assert.equal(graph.counts.connected_faculty_count, 1);
+  assert.equal(graph.schools.find((school) => school.school_id === "mcs").faculty_count, 1);
+  assert.equal(graph.edges.length, 1);
+  assert.deepEqual(graph.edges[0].works.map((work) => work.year), [1995, 1990]);
+  assert.equal(graph.edges[0].cross_department, false);
+  assert.equal(graph.edges[0].cross_school, false);
+  assert.equal(graph.edges[0].works[0].source_types[0], "curated_verified");
+  assert.equal(graph.edges[0].works[0].source_verified_at, "2026-10-24");
+  assert.equal(graph.edges[0].works[0].source_verification_urls.length, 1);
+  assert.equal(graph.edges[0].works[1].topic, "");
+});
+
+test("deriveGraph rejects unverified external identities and broken paper joins", () => {
+  const artifact = artifactFixture();
+  artifact.catalogs.external_coauthors = [{
+    person_id: "external-paul-erdos",
+    display_name: "Paul Erdős",
+    source_url: "https://example.com/erdos",
+  }];
+  artifact.points[0].external_coauthor_ids = ["external-paul-erdos"];
+  artifact.points[0].source_types = ["curated_verified"];
+  artifact.points[0].source_verification_urls = ["https://example.com/work"];
+  assert.equal(build.deriveGraph(artifact, config, "a".repeat(40)).edges.length, 3);
+
+  const duplicate = structuredClone(artifact);
+  duplicate.points[0].external_coauthor_ids.push("external-paul-erdos");
+  assert.throws(() => build.deriveGraph(duplicate, config, "a".repeat(40)), /duplicate external references/);
+  const unknown = structuredClone(artifact);
+  unknown.points[0].external_coauthor_ids = ["external-unknown"];
+  assert.throws(() => build.deriveGraph(unknown, config, "a".repeat(40)), /unknown external coauthor/);
+  const noSource = structuredClone(artifact);
+  noSource.catalogs.external_coauthors[0].source_url = "";
+  assert.throws(() => build.deriveGraph(noSource, config, "a".repeat(40)), /public source URL/);
+  const facultyCollision = structuredClone(artifact);
+  facultyCollision.catalogs.external_coauthors[0].person_id = "a";
+  assert.throws(() => build.deriveGraph(facultyCollision, config, "a".repeat(40)), /external coauthor ID/);
+  const noPaperEvidence = structuredClone(artifact);
+  noPaperEvidence.points[0].source_verification_urls = [];
+  assert.throws(() => build.deriveGraph(noPaperEvidence, config, "a".repeat(40)), /public verification URL/);
+  const noVerifiedType = structuredClone(artifact);
+  noVerifiedType.points[0].source_types = ["scholar"];
+  assert.throws(() => build.deriveGraph(noVerifiedType, config, "a".repeat(40)), /verified source type/);
+});
+
 test("deriveGraph checks the additive school contract", () => {
   const cases = [
     [(artifact) => (artifact.catalogs.schools = []), /invalid schools/],

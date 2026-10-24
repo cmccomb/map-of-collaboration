@@ -144,6 +144,92 @@ test("school filters preserve outward edges and legacy department links", () => 
   assert.deepEqual(unconnected.nodes.map((node) => node.id), ["c"]);
 });
 
+test("external coauthor stays outside CMU but is searchable and visible with an MCS collaborator", () => {
+  const value = schoolFixture();
+  value.schools[1] = { school_id: "mcs", title: "Mellon College of Science" };
+  value.departments[1].school_id = "mcs";
+  value.nodes[2].school_ids = ["mcs"];
+  value.nodes.push({
+    id: "external-paul-erdos",
+    kind: "external_coauthor",
+    name: "Paul Erdős",
+    departments: [],
+    primary_department: "",
+    school_ids: [],
+    primary_school: "",
+    mapped_publication_count: 2,
+    homepage_url: "https://example.com/erdos",
+    x: 0.7,
+    y: 0.2,
+  });
+  value.edges = [{
+    source: "c",
+    target: "external-paul-erdos",
+    cross_department: false,
+    cross_school: false,
+    works: [
+      {
+        id: "1990-paper",
+        title: "Representations of integers as the sum of k terms",
+        year: 1990,
+        doi: "10.1002/rsa.3240010302",
+        source_types: ["curated_verified"],
+        source_verified_at: "2026-10-24",
+        source_verification_urls: ["https://doi.org/10.1002/rsa.3240010302"],
+      },
+      { id: "1995-paper", title: "Independence of solution sets and minimal asymptotic bases", year: 1995 },
+    ],
+  }];
+  value.years.minimum = 1990;
+  const graph = core.parseGraph(value);
+  const erdos = graph.nodeById.get("external-paul-erdos");
+  assert.equal(erdos.kind, "external_coauthor");
+  assert.deepEqual(erdos.departments, []);
+  assert.deepEqual(erdos.school_ids, []);
+  assert.equal(erdos.primary_department, "");
+  assert.equal(erdos.primary_school, "");
+  assert.equal(core.facultyMatches(graph, "erdős")[0].id, erdos.id);
+  assert.equal(graph.edges[0].works[0].source_types[0], "curated_verified");
+  assert.equal(graph.edges[0].works[0].source_verified_at, "2026-10-24");
+  assert.equal(graph.edges[0].works[0].source_verification_urls[0], "https://doi.org/10.1002/rsa.3240010302");
+  assert.equal(core.defaultState(graph).showExternal, false);
+  const hidden = core.filterGraph(graph, core.stateFromSearch("?schools=mcs", graph));
+  assert.equal(hidden.edges.length, 0);
+  assert.deepEqual(hidden.nodes.map((node) => node.id), ["c"]);
+  assert.equal(hidden.nodes[0].hidden_external_connection, true);
+  const mcsState = core.stateFromSearch("?schools=mcs&external=1", graph);
+  assert.equal(mcsState.showExternal, true);
+  assert.equal(core.stateToSearch(mcsState, graph), "?schools=mcs&external=1");
+  const mcs = core.filterGraph(graph, mcsState);
+  assert.equal(mcs.edges.length, 1);
+  assert.deepEqual(mcs.nodes.map((node) => node.id).sort(), ["c", "external-paul-erdos"]);
+  for (const positions of [
+    core.collaborationLayout(mcs),
+    core.departmentGridLayout(mcs, graph),
+    core.departmentForceLayout(mcs, graph),
+  ]) {
+    assert.deepEqual([...positions.keys()].sort(), ["c", "external-paul-erdos"]);
+    assert([...positions.values()].every((point) => Number.isFinite(point.x) && Number.isFinite(point.y)));
+  }
+  const math = core.filterGraph(graph, core.stateFromSearch("?departments=two&external=1", graph));
+  assert.equal(math.edges.length, 1);
+  const crossSchool = core.filterGraph(graph, core.stateFromSearch("?schools=mcs&external=1&cross_school=1", graph));
+  assert.equal(crossSchool.edges.length, 0);
+  assert.equal(core.stateFromSearch("?faculty=external-paul-erdos", graph).showExternal, true);
+  const csv = core.edgesToCsv(graph, mcs);
+  assert.match(csv, /^person_1,person_1_kind,person_2,person_2_kind,/);
+  assert.match(csv, /external_coauthor/);
+
+  value.nodes.at(-1).school_ids = ["mcs"];
+  assert.throws(() => core.parseGraph(value), /must not have a CMU school/);
+  value.nodes.at(-1).school_ids = [];
+  value.nodes.at(-1).departments = ["two"];
+  assert.throws(() => core.parseGraph(value), /must not have a CMU department/);
+  value.nodes.at(-1).departments = [];
+  value.edges[0].cross_school = true;
+  assert.throws(() => core.parseGraph(value), /External coauthor edges cannot be cross/);
+});
+
 test("parseGraph validates school joins", () => {
   const cases = [
     [(value) => (value.schools = []), /missing schools/],
@@ -367,6 +453,7 @@ test("URL state is bounded and round-trips", () => {
     minimum: 20,
     crossDepartment: true,
     crossSchool: false,
+    showExternal: false,
     showUnconnected: true,
     layout: "department-force",
     departmentSpacing: 5,

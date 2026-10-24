@@ -7,6 +7,7 @@
 })(typeof globalThis === "object" ? globalThis : this, () => {
   const GRAPH_SCHEMA_VERSION = 1;
   const SAFE_PROTOCOLS = new Set(["https:", "http:"]);
+  const EXTERNAL_LAYOUT_GROUP = "__external_coauthors__";
 
   function assert(condition, message) {
     if (!condition) throw new Error(message);
@@ -98,27 +99,42 @@
       const id = String(node.id || "");
       assert(id && !nodeIds.has(id), `Invalid or duplicate faculty ID: ${id}`);
       nodeIds.add(id);
+      assert(!node.kind || ["faculty", "external_coauthor"].includes(node.kind),
+        `Node ${id} has an invalid kind`);
+      const kind = node.kind === "external_coauthor" ? "external_coauthor" : "faculty";
       const departmentsForNode = uniqueStrings(node.departments).filter((item) =>
         departmentIds.has(item),
       );
-      assert(departmentsForNode.length > 0, `Faculty ${id} has no valid department`);
+      assert(kind === "external_coauthor" ? uniqueStrings(node.departments).length === 0 : departmentsForNode.length > 0,
+        kind === "external_coauthor"
+          ? `External coauthor ${id} must not have a CMU department`
+          : `Faculty ${id} has no valid department`);
       const schoolsForNode = hasSchools
         ? uniqueStrings(node.school_ids)
-        : ["engineering"];
-      assert(schoolsForNode.length > 0 && schoolsForNode.every((item) => schoolIds.has(item)),
-        `Faculty ${id} has invalid school memberships`);
+        : kind === "external_coauthor" ? [] : ["engineering"];
+      assert(kind === "external_coauthor"
+        ? schoolsForNode.length === 0
+        : schoolsForNode.length > 0 && schoolsForNode.every((item) => schoolIds.has(item)),
+      kind === "external_coauthor"
+        ? `External coauthor ${id} must not have a CMU school`
+        : `Faculty ${id} has invalid school memberships`);
       assert(Number.isFinite(node.x) && Number.isFinite(node.y), `Faculty ${id} has no position`);
       return {
         id,
+        kind,
         name: String(node.name || id),
         departments: departmentsForNode,
-        primary_department: departmentIds.has(node.primary_department)
-          ? node.primary_department
-          : departmentsForNode[0],
+        primary_department: kind === "external_coauthor"
+          ? ""
+          : departmentIds.has(node.primary_department)
+            ? node.primary_department
+            : departmentsForNode[0],
         school_ids: schoolsForNode,
-        primary_school: schoolIds.has(node.primary_school)
-          ? node.primary_school
-          : schoolsForNode[0],
+        primary_school: kind === "external_coauthor"
+          ? ""
+          : schoolIds.has(node.primary_school)
+            ? node.primary_school
+            : schoolsForNode[0],
         roles: uniqueStrings(node.roles),
         publication_count: Math.max(0, integer(node.publication_count)),
         mapped_publication_count: Math.max(0, integer(node.mapped_publication_count)),
@@ -155,6 +171,11 @@
           venue: String(work.venue || ""),
           citations: Math.max(0, integer(work.citations)),
           url: safeExternalUrl(work.url) || doiUrl(work.doi),
+          source_types: uniqueStrings(work.source_types),
+          source_verified_at: String(work.source_verified_at || ""),
+          source_verification_urls: uniqueStrings(work.source_verification_urls)
+            .map(safeExternalUrl)
+            .filter(Boolean),
           topic: String(work.topic || ""),
         };
       });
@@ -167,6 +188,14 @@
         works,
       };
     });
+    const externalIds = new Set(nodes
+      .filter((node) => node.kind === "external_coauthor")
+      .map((node) => node.id));
+    assert(edges.every((edge) => {
+      const external = [edge.source, edge.target]
+        .some((id) => externalIds.has(id));
+      return !external || (!edge.cross_department && !edge.cross_school);
+    }), "External coauthor edges cannot be cross-department or cross-school");
 
     const years = input.years || {};
     const yearMinimum = integer(years.minimum, 0);
@@ -207,6 +236,7 @@
       minimum: 1,
       crossDepartment: false,
       crossSchool: false,
+      showExternal: false,
       showUnconnected: false,
       layout: "collaboration",
       departmentSpacing: 3,
@@ -222,6 +252,10 @@
 
   function clamp(value, minimum, maximum) {
     return Math.min(maximum, Math.max(minimum, value));
+  }
+
+  function layoutGroup(node) {
+    return node.kind === "external_coauthor" ? EXTERNAL_LAYOUT_GROUP : node.primary_department;
   }
 
   function stateFromSearch(search, graph) {
@@ -250,6 +284,8 @@
       params.getAll("faculty").flatMap((value) => value.split(",")),
       graph,
     );
+    const selectedExternal = selectedIds.some((id) =>
+      graph.nodeById.get(id)?.kind === "external_coauthor");
     return {
       departments,
       schools,
@@ -258,6 +294,7 @@
       minimum: clamp(integer(params.get("minimum"), 1), 1, 20),
       crossDepartment: params.get("cross") === "1",
       crossSchool: graph.schools.length > 1 && params.get("cross_school") === "1",
+      showExternal: params.get("external") === "1" || selectedExternal,
       showUnconnected: params.get("unconnected") === "1",
       layout: ["departments", "department-force"].includes(params.get("layout"))
         ? params.get("layout")
@@ -277,6 +314,9 @@
     if (state.minimum !== 1) params.set("minimum", String(state.minimum));
     if (state.crossDepartment) params.set("cross", "1");
     if (state.crossSchool && graph.schools.length > 1) params.set("cross_school", "1");
+    if (state.showExternal && graph.nodes.some((node) => node.kind === "external_coauthor")) {
+      params.set("external", "1");
+    }
     if (state.showUnconnected) params.set("unconnected", "1");
     if (["departments", "department-force"].includes(state.layout)) {
       params.set("layout", state.layout);
@@ -320,18 +360,40 @@
     );
     const filteredEdges = [];
     const visibleIds = new Set();
+    const hiddenExternalIds = new Set();
     const visibleWorkIds = new Set();
     const metrics = new Map(
       graph.nodes.map((node) => [node.id, { degree: 0, strength: 0 }]),
     );
 
     for (const edge of graph.edges) {
-      if (!departmentCandidateIds.has(edge.source) || !departmentCandidateIds.has(edge.target)) continue;
+      if (selectedDepartments.size) {
+        const source = graph.nodeById.get(edge.source);
+        const target = graph.nodeById.get(edge.target);
+        const sourceMatches = departmentCandidateIds.has(edge.source);
+        const targetMatches = departmentCandidateIds.has(edge.target);
+        if (source.kind === "external_coauthor" ? !targetMatches
+          : target.kind === "external_coauthor" ? !sourceMatches
+            : !sourceMatches || !targetMatches) continue;
+      }
       if (selectedSchools.size && !schoolCandidateIds.has(edge.source) && !schoolCandidateIds.has(edge.target)) continue;
       if (state.crossDepartment && !edge.cross_department) continue;
       if (state.crossSchool && !edge.cross_school) continue;
       const works = edge.works.filter((work) => includesYear(work, state, graph));
       if (works.length < state.minimum) continue;
+      const source = graph.nodeById.get(edge.source);
+      const target = graph.nodeById.get(edge.target);
+      if (!state.showExternal && (source.kind === "external_coauthor" || target.kind === "external_coauthor")) {
+        if (source.kind !== "external_coauthor") {
+          visibleIds.add(source.id);
+          hiddenExternalIds.add(source.id);
+        }
+        if (target.kind !== "external_coauthor") {
+          visibleIds.add(target.id);
+          hiddenExternalIds.add(target.id);
+        }
+        continue;
+      }
       filteredEdges.push({ ...edge, count: works.length, works });
       visibleIds.add(edge.source);
       visibleIds.add(edge.target);
@@ -345,14 +407,21 @@
 
     if (state.showUnconnected) {
       departmentCandidateIds.forEach((id) => {
-        if (schoolCandidateIds.has(id)) visibleIds.add(id);
+        if (schoolCandidateIds.has(id)
+          && (state.showExternal || graph.nodeById.get(id).kind !== "external_coauthor")) visibleIds.add(id);
       });
     }
-    validFacultyIds(state.selectedIds || [], graph).forEach((id) => visibleIds.add(id));
+    validFacultyIds(state.selectedIds || [], graph).forEach((id) => {
+      if (state.showExternal || graph.nodeById.get(id).kind !== "external_coauthor") visibleIds.add(id);
+    });
 
     const nodes = graph.nodes
       .filter((node) => visibleIds.has(node.id))
-      .map((node) => ({ ...node, ...metrics.get(node.id) }));
+      .map((node) => ({
+        ...node,
+        ...metrics.get(node.id),
+        hidden_external_connection: hiddenExternalIds.has(node.id),
+      }));
     filteredEdges.sort(
       (left, right) =>
         right.count - left.count ||
@@ -548,7 +617,7 @@
             distance = 0.0001;
           }
           const differentDepartments =
-            nodes[left].primary_department !== nodes[right].primary_department;
+            layoutGroup(nodes[left]) !== layoutGroup(nodes[right]);
           const repulsionMultiplier =
             departmental && differentDepartments ? 1 + openness * 0.22 : 1;
           const force = ((spacing * spacing) / distance) * repulsionMultiplier;
@@ -584,7 +653,7 @@
         (departmental ? 0.2 : 0.17) * Math.pow(1 - progress, 1.55) + 0.002;
       for (let index = 0; index < nodes.length; index += 1) {
         if (departmental) {
-          const anchor = departmentAnchors.get(nodes[index].primary_department);
+          const anchor = departmentAnchors.get(layoutGroup(nodes[index]));
           if (anchor) {
             const anchorStrength = 0.3 + openness * 0.035;
             dx[index] += (anchor.x - x[index]) * anchorStrength;
@@ -670,8 +739,9 @@
 
     const groups = new Map();
     for (const node of filtered.nodes) {
-      if (!groups.has(node.primary_department)) groups.set(node.primary_department, []);
-      groups.get(node.primary_department).push(node);
+      const group = layoutGroup(node);
+      if (!groups.has(group)) groups.set(group, []);
+      groups.get(group).push(node);
     }
     const activeDepartmentIds = [
       ...graph.departments
@@ -689,13 +759,13 @@
     for (const edge of filtered.edges) {
       const source = filtered.nodeById.get(edge.source);
       const target = filtered.nodeById.get(edge.target);
-      if (!source || !target || source.primary_department === target.primary_department) continue;
+      if (!source || !target || layoutGroup(source) === layoutGroup(target)) continue;
       const weight = Math.max(1, edge.count || 1);
       crossStrengthByNode.set(source.id, crossStrengthByNode.get(source.id) + weight);
       crossStrengthByNode.set(target.id, crossStrengthByNode.get(target.id) + weight);
       for (const [left, right] of [
-        [source.primary_department, target.primary_department],
-        [target.primary_department, source.primary_department],
+        [layoutGroup(source), layoutGroup(target)],
+        [layoutGroup(target), layoutGroup(source)],
       ]) {
         crossStrengthByDepartment.set(left, crossStrengthByDepartment.get(left) + weight);
         adjacency.get(left).set(right, (adjacency.get(left).get(right) || 0) + weight);
@@ -769,10 +839,11 @@
     const gridSeed = departmentGridLayout(filtered, graph);
     const nodesByDepartment = new Map();
     for (const node of filtered.nodes) {
-      if (!nodesByDepartment.has(node.primary_department)) {
-        nodesByDepartment.set(node.primary_department, []);
+      const group = layoutGroup(node);
+      if (!nodesByDepartment.has(group)) {
+        nodesByDepartment.set(group, []);
       }
-      nodesByDepartment.get(node.primary_department).push(node);
+      nodesByDepartment.get(group).push(node);
     }
 
     const gridCenters = new Map();
@@ -794,8 +865,8 @@
     const seed = new Map();
     for (const node of filtered.nodes) {
       const point = gridSeed.get(node.id);
-      const center = gridCenters.get(node.primary_department);
-      const anchor = departmentAnchors.get(node.primary_department);
+      const center = gridCenters.get(layoutGroup(node));
+      const anchor = departmentAnchors.get(layoutGroup(node));
       const angle = layoutHash(`department-force|${node.id}`) * Math.PI * 2;
       const jitter = 0.01 + layoutHash(`department-jitter|${node.id}`) * 0.014;
       seed.set(node.id, {
@@ -873,8 +944,19 @@
   }
 
   function edgesToCsv(graph, filtered) {
+    const hasExternal = graph.nodes.some((node) => node.kind === "external_coauthor");
     const rows = [
-      [
+      hasExternal ? [
+        "person_1",
+        "person_1_kind",
+        "person_2",
+        "person_2_kind",
+        "shared_works",
+        "earliest_year",
+        "latest_year",
+        "cross_department",
+        "cross_school",
+      ] : [
         "faculty_1",
         "faculty_2",
         "shared_works",
@@ -886,7 +968,7 @@
     ];
     for (const edge of filtered.edges) {
       const years = edge.works.map((work) => work.year).filter(Number.isInteger);
-      rows.push([
+      const values = [
         graph.nodeById.get(edge.source)?.name || edge.source,
         graph.nodeById.get(edge.target)?.name || edge.target,
         edge.count,
@@ -894,7 +976,12 @@
         years.length ? Math.max(...years) : "",
         edge.cross_department ? "yes" : "no",
         edge.cross_school ? "yes" : "no",
-      ]);
+      ];
+      if (hasExternal) {
+        values.splice(1, 0, graph.nodeById.get(edge.source)?.kind || "faculty");
+        values.splice(3, 0, graph.nodeById.get(edge.target)?.kind || "faculty");
+      }
+      rows.push(values);
     }
     return rows.map((row) => row.map(csvEscape).join(",")).join("\n");
   }

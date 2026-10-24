@@ -76,15 +76,36 @@ not committed here.
 The graph builder also accepts additive school fields in the publication
 artifact: `catalogs.schools` with `school_id`, `title`, and `directory_url`;
 `catalogs.departments[].school_id`; and `catalogs.faculty[].school_ids`.
-`points[].school_ids` may be present for provenance, while coauthorship still
-comes only from shared `points[].faculty_ids`. Existing Engineering-only
+`points[].school_ids` may be present for provenance. CMU faculty coauthorship
+still comes only from shared `points[].faculty_ids`. Existing Engineering-only
 artifacts without school fields resolve to one `engineering` school.
 
 `?schools=scs` shows an observed edge when **either** endpoint belongs to SCS,
 so collaborators in another school remain visible. Existing `?departments=`
-links keep their original rule: both endpoints must belong to a selected
-department or program. `?cross_school=1` selects pairs with no school in
-common; this is separate from the existing cross-department filter.
+links keep their original rule for faculty pairs: both endpoints must belong to
+a selected department or program. `?cross_school=1` selects faculty pairs with
+no school in common; this is separate from the existing cross-department filter.
+
+## Verified historical coauthors
+
+The publication artifact may supply `catalogs.external_coauthors` with a
+stable `person_id`, name, and public identity source URL. A publication point
+may name one of these IDs in `external_coauthor_ids` only when it also has a
+`curated_verified` source type and a public paper-level verification URL. The
+builder adds an external node and a coauthorship edge only for those exact work
+relationships. It does not infer identities from free-text author lists.
+
+External coauthors have no CMU school, department, or faculty role. They remain
+separate from CMU faculty and school counts. The current pilot catalogs only
+Paul Erdős as an external historical coauthor; it does not index every outside
+collaborator. An MCS school or Mathematical
+Sciences department filter retains Tetali because he belongs to the selected
+group. The Tetali–Erdős edge appears when **Show Erdős** is turned on; the
+toggle is off by default and can be shared with `?external=1`. The edge is not
+classified as cross-school or cross-department. The graph retains publisher
+and institutional verification links on shared works and labels the external
+node in search, details, the color key, and CSV export. The normal Engineering artifact, which has no
+external coauthor catalog, keeps its original behavior.
 
 The committed `map-config.json` remains pointed at the published Engineering
 dataset. A school pilot requires a separately reviewed publication artifact

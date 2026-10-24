@@ -462,8 +462,9 @@ input[type="number"]:focus {
   color: var(--text);
 }
 
-.faculty-field + .school-fieldset,
-.faculty-field + .department-fieldset,
+.faculty-field + #show-external-row,
+#show-external-row + .school-fieldset,
+#show-external-row + .department-fieldset,
 .school-fieldset + .department-fieldset,
 .department-fieldset + .year-filter-fieldset,
 .year-filter-fieldset + .strength-fieldset,
@@ -482,6 +483,10 @@ input[type="number"]:focus {
   border: 1px solid var(--line-strong);
   border-radius: 0.48rem;
   background: var(--input);
+}
+
+.color-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .layout-options label {
@@ -973,6 +978,16 @@ input[type="number"]:focus {
   white-space: nowrap;
 }
 
+.external-legend {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.28rem 0.18rem;
+  color: var(--muted);
+  font-size: 0.58rem;
+}
+
 .edge-key {
   display: grid;
   grid-template-columns: 2.4rem minmax(0, 1fr);
@@ -1215,6 +1230,13 @@ input[type="number"]:focus {
   display: block;
   margin-top: 0.1rem;
   color: var(--quiet);
+  font-size: 0.54rem;
+}
+
+.publication-source {
+  display: inline-block;
+  margin: 0.14rem 0.48rem 0 0;
+  color: var(--muted) !important;
   font-size: 0.54rem;
 }
 
