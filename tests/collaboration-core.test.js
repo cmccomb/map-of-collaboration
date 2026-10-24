@@ -843,6 +843,68 @@ test("department layouts fold secondary matches into a selected affiliation", ()
   assert.ok(distanceFromPrimaryCluster(foldedForce) < distanceFromPrimaryCluster(separatedForce));
 });
 
+test("a Math member with a Tepper academic-area home joins Math in Math and MCS views", () => {
+  const value = schoolFixture();
+  value.schools = [
+    { school_id: "mcs", title: "Mellon College of Science" },
+    { school_id: "tepper", title: "Tepper School of Business" },
+  ];
+  value.departments[0] = {
+    ...value.departments[0], department_id: "math", title: "Mathematical Sciences",
+    school_id: "mcs",
+  };
+  value.departments[1] = {
+    ...value.departments[1], department_id: "tepper-faculty", title: "Tepper faculty",
+    school_id: "tepper", unit_type: "roster_container",
+  };
+  value.academic_homes = [
+    {
+      home_group: "math", home_type: "department", home_id: "math",
+      title: "Mathematical Sciences", school_id: "mcs",
+    },
+    {
+      home_group: "academic_area:tepper:operations-research", home_type: "academic_area",
+      home_id: "tepper:operations-research", title: "Operations Research",
+      school_id: "tepper",
+    },
+  ];
+  value.nodes[0].departments = ["math"];
+  value.nodes[0].primary_department = "math";
+  value.nodes[0].school_ids = ["mcs"];
+  value.nodes[1].departments = ["math", "tepper-faculty"];
+  value.nodes[1].primary_department = "";
+  value.nodes[1].school_ids = ["mcs", "tepper"];
+  value.nodes[1].primary_academic_home_type = "academic_area";
+  value.nodes[1].primary_academic_home_id = "tepper:operations-research";
+  value.nodes[1].primary_academic_home_title = "Operations Research";
+  value.nodes[1].primary_academic_home_school_id = "tepper";
+  value.nodes[1].primary_academic_home_basis = "reviewed";
+  value.nodes[2].departments = ["tepper-faculty"];
+  value.nodes[2].primary_department = "";
+  value.nodes[2].school_ids = ["tepper"];
+  const graph = core.parseGraph(value);
+  const joint = graph.nodeById.get("b");
+  const area = "academic_area:tepper:operations-research";
+  assert.equal(joint.primary_home_group, area);
+  assert.equal(core.layoutDepartmentId(joint, [], graph, []), area);
+
+  for (const query of ["?departments=math", "?schools=mcs", "?schools=mcs&departments=math"]) {
+    const view = core.stateFromSearch(query, graph);
+    const filtered = core.filterGraph(graph, view);
+    assert.deepEqual(filtered.nodes.map((node) => node.id), ["a", "b"]);
+    assert.deepEqual(filtered.edges.map((edge) => edge.id), ["a|b"]);
+    assert.equal(core.layoutDepartmentId(joint, view.departments, graph, view.schools), "math");
+    const assignments = core.forceDepartmentAssignments(
+      filtered, graph, view.schoolSpacing, view.departments, view.schools,
+    );
+    assert.deepEqual([...assignments.values()], ["math", "math"]);
+    assert.equal(core.departmentGridLayout(filtered, graph, view.departments, view.schools).size, 2);
+    assert.equal(core.departmentForceLayout(filtered, graph, 3, view.departments, 0, view.schools).size, 2);
+    assert.equal(joint.primary_home_group, area);
+  }
+  assert.equal(core.layoutDepartmentId(joint, ["tepper-faculty"], graph), area);
+});
+
 test("department force layout is deterministic, organic, and tunably separated", () => {
   const graph = core.parseGraph(fixture());
   const filtered = core.filterGraph(graph, core.defaultState(graph));
