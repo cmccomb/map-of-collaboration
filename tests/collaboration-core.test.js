@@ -351,14 +351,36 @@ test("faculty search considers names and departments", () => {
   assert.equal(core.facultyMatches(graph, "One", 1).length, 1);
 });
 
-test("automatic labels require an explicit department for cross-appointed faculty", () => {
-  assert.equal(core.facultyLabelEligible({ departments: ["one"] }), true);
-  assert.equal(core.facultyLabelEligible({ departments: ["one", "two"] }), false);
+test("automatic labels stay within explicitly selected primary departments", () => {
+  assert.equal(core.departmentLabelEligible("one"), true);
+  assert.equal(core.departmentLabelEligible("one", ["two"]), false);
+  assert.equal(core.departmentLabelEligible("one", ["one", "two"]), true);
   assert.equal(
-    core.facultyLabelEligible({ departments: ["one", "two"] }, ["missing"]),
+    core.facultyLabelEligible({ departments: ["one"], primary_department: "one" }),
+    true,
+  );
+  assert.equal(
+    core.facultyLabelEligible({ departments: ["one"], primary_department: "one" }, ["two"]),
     false,
   );
-  assert.equal(core.facultyLabelEligible({ departments: ["one", "two"] }, ["two"]), true);
+  assert.equal(
+    core.facultyLabelEligible({ departments: ["one", "two"], primary_department: "one" }),
+    false,
+  );
+  assert.equal(
+    core.facultyLabelEligible(
+      { departments: ["one", "two"], primary_department: "one" },
+      ["two"],
+    ),
+    false,
+  );
+  assert.equal(
+    core.facultyLabelEligible(
+      { departments: ["one", "two"], primary_department: "one" },
+      ["one"],
+    ),
+    true,
+  );
 });
 
 test("multi-selection builds the union of selected neighborhoods", () => {

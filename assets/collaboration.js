@@ -666,6 +666,9 @@
     context.font = "700 11px Inter, ui-sans-serif, system-ui, sans-serif";
 
     for (const department of state.graph.departments) {
+      if (!core.departmentLabelEligible(department.department_id, state.view.departments)) {
+        continue;
+      }
       const nodes = groups.get(department.department_id);
       if (!nodes?.length) continue;
       const points = nodes.map((node) => worldToScreen(node, now, transform));

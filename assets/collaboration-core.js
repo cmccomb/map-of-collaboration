@@ -352,9 +352,18 @@
 
   function facultyLabelEligible(node, selectedDepartmentIds = []) {
     const departments = uniqueStrings(node?.departments);
-    if (departments.length <= 1) return true;
     const selectedDepartments = new Set(uniqueStrings(selectedDepartmentIds));
-    return departments.some((departmentId) => selectedDepartments.has(departmentId));
+    if (!selectedDepartments.size) return departments.length === 1;
+    const primaryDepartment = String(node?.primary_department || departments[0] || "").trim();
+    return selectedDepartments.has(primaryDepartment);
+  }
+
+  function departmentLabelEligible(departmentId, selectedDepartmentIds = []) {
+    const selectedDepartments = new Set(uniqueStrings(selectedDepartmentIds));
+    return (
+      !selectedDepartments.size ||
+      selectedDepartments.has(String(departmentId || "").trim())
+    );
   }
 
   function connectionsForNode(filtered, nodeId) {
@@ -852,6 +861,7 @@
     defaultState,
     departmentForceLayout,
     departmentGridLayout,
+    departmentLabelEligible,
     doiUrl,
     edgeKey,
     edgeCrossingCount,
