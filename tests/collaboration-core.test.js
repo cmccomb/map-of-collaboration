@@ -499,14 +499,36 @@ test("faculty search considers names and departments", () => {
   assert.equal(core.facultyMatches(graph, "One", 1).length, 1);
 });
 
-test("automatic labels require an explicit department for cross-appointed faculty", () => {
-  assert.equal(core.facultyLabelEligible({ departments: ["one"] }), true);
-  assert.equal(core.facultyLabelEligible({ departments: ["one", "two"] }), false);
+test("automatic labels stay within explicitly selected primary departments", () => {
+  assert.equal(core.departmentLabelEligible("one"), true);
+  assert.equal(core.departmentLabelEligible("one", ["two"]), false);
+  assert.equal(core.departmentLabelEligible("one", ["one", "two"]), true);
   assert.equal(
-    core.facultyLabelEligible({ departments: ["one", "two"] }, ["missing"]),
+    core.facultyLabelEligible({ departments: ["one"], primary_department: "one" }),
+    true,
+  );
+  assert.equal(
+    core.facultyLabelEligible({ departments: ["one"], primary_department: "one" }, ["two"]),
     false,
   );
-  assert.equal(core.facultyLabelEligible({ departments: ["one", "two"] }, ["two"]), true);
+  assert.equal(
+    core.facultyLabelEligible({ departments: ["one", "two"], primary_department: "one" }),
+    false,
+  );
+  assert.equal(
+    core.facultyLabelEligible(
+      { departments: ["one", "two"], primary_department: "one" },
+      ["two"],
+    ),
+    false,
+  );
+  assert.equal(
+    core.facultyLabelEligible(
+      { departments: ["one", "two"], primary_department: "one" },
+      ["one"],
+    ),
+    true,
+  );
 });
 
 test("multi-selection builds the union of selected neighborhoods", () => {
@@ -596,12 +618,45 @@ test("department grid separates deterministic affiliation clusters", () => {
   assert.ok(Math.abs(centerY) < 1e-9);
 });
 
+test("department layouts fold secondary matches into a selected affiliation", () => {
+  const value = fixture();
+  value.nodes[2].departments = ["two", "one"];
+  const graph = core.parseGraph(value);
+  const filtered = core.filterGraph(graph, {
+    ...core.defaultState(graph),
+    departments: ["one"],
+  });
+  const secondary = graph.nodeById.get("c");
+
+  assert.equal(core.layoutDepartmentId(secondary), "two");
+  assert.equal(core.layoutDepartmentId(secondary, ["missing"]), "two");
+  assert.equal(core.layoutDepartmentId(secondary, ["one"]), "one");
+  assert.equal(core.layoutDepartmentId(secondary, ["one", "two"]), "two");
+
+  const distanceFromPrimaryCluster = (positions) => {
+    const center = {
+      x: (positions.get("a").x + positions.get("b").x) / 2,
+      y: (positions.get("a").y + positions.get("b").y) / 2,
+    };
+    return Math.hypot(positions.get("c").x - center.x, positions.get("c").y - center.y);
+  };
+  const separatedGrid = core.departmentGridLayout(filtered, graph);
+  const foldedGrid = core.departmentGridLayout(filtered, graph, ["one"]);
+  const separatedForce = core.departmentForceLayout(filtered, graph, 3);
+  const foldedForce = core.departmentForceLayout(filtered, graph, 3, ["one"]);
+
+  assert.ok(distanceFromPrimaryCluster(foldedGrid) < distanceFromPrimaryCluster(separatedGrid));
+  assert.ok(distanceFromPrimaryCluster(foldedForce) < distanceFromPrimaryCluster(separatedForce));
+});
+
 test("department force layout is deterministic, organic, and tunably separated", () => {
   const graph = core.parseGraph(fixture());
   const filtered = core.filterGraph(graph, core.defaultState(graph));
   const balanced = core.departmentForceLayout(filtered, graph, 3);
   const repeated = core.departmentForceLayout(filtered, graph, 3);
   const close = core.departmentForceLayout(filtered, graph, 1);
+  const compact = core.departmentForceLayout(filtered, graph, 2);
+  const open = core.departmentForceLayout(filtered, graph, 4);
   const far = core.departmentForceLayout(filtered, graph, 5);
 
   assert.deepEqual(balanced, repeated);
@@ -618,6 +673,11 @@ test("department force layout is deterministic, organic, and tunably separated",
     return Math.hypot(one.x - positions.get("c").x, one.y - positions.get("c").y);
   };
   assert.ok(departmentDistance(far) > departmentDistance(close));
+  assert.ok(departmentDistance(far) > departmentDistance(balanced) * 1.5);
+  assert.ok(
+    departmentDistance(far) - departmentDistance(open) >
+      departmentDistance(balanced) - departmentDistance(compact),
+  );
   assert.deepEqual(core.departmentForceLayout(filtered, graph, 99), far);
   assert.deepEqual(core.departmentForceLayout({ nodes: [] }, graph), new Map());
   assert.deepEqual(

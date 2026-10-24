@@ -323,6 +323,13 @@
     elements.departmentOptions.querySelectorAll("input").forEach((input) => {
       input.checked = selectedDepartments.has(input.value);
     });
+    elements.departmentLegend.querySelectorAll("button[data-department-id]").forEach((button) => {
+      if (selectedDepartments.has(button.dataset.departmentId)) {
+        button.setAttribute("aria-current", "true");
+      } else {
+        button.removeAttribute("aria-current");
+      }
+    });
     elements.yearMin.value = String(view.fromYear);
     elements.yearMax.value = String(view.toYear);
     elements.strength.value = String(view.minimum);
@@ -513,9 +520,14 @@
     const selection = core.subgraphForSelection(state.filtered, selectedIds);
     const positions =
       state.view.layout === "department-force"
-        ? core.departmentForceLayout(selection, state.graph, state.view.departmentSpacing)
+        ? core.departmentForceLayout(
+            selection,
+            state.graph,
+            state.view.departmentSpacing,
+            state.view.departments,
+          )
         : state.view.layout === "departments"
-          ? core.departmentGridLayout(selection, state.graph)
+          ? core.departmentGridLayout(selection, state.graph, state.view.departments)
           : core.selectionLayout(state.filtered, selectedIds);
     fitNodes(selection.nodes, {
       maximumScale: selection.edges.length ? 560 : 420,
@@ -555,9 +567,14 @@
     else {
       const positions =
         state.view.layout === "department-force"
-          ? core.departmentForceLayout(state.filtered, state.graph, state.view.departmentSpacing)
+          ? core.departmentForceLayout(
+              state.filtered,
+              state.graph,
+              state.view.departmentSpacing,
+              state.view.departments,
+            )
           : state.view.layout === "departments"
-            ? core.departmentGridLayout(state.filtered, state.graph)
+            ? core.departmentGridLayout(state.filtered, state.graph, state.view.departments)
             : spreadOverviewLayout(core.collaborationLayout(state.filtered));
       fitNodes(state.filtered?.nodes || [], {
         positions,
@@ -767,14 +784,18 @@
   function drawDepartmentLabels(occupied, now, transform) {
     const groups = new Map();
     for (const node of state.filtered.nodes) {
-      if (!groups.has(node.primary_department)) groups.set(node.primary_department, []);
-      groups.get(node.primary_department).push(node);
+      const departmentId = core.layoutDepartmentId(node, state.view.departments);
+      if (!groups.has(departmentId)) groups.set(departmentId, []);
+      groups.get(departmentId).push(node);
     }
     const viewport = effectiveViewport();
     const origin = { x: transform.x, y: transform.y };
     context.font = "700 11px Inter, ui-sans-serif, system-ui, sans-serif";
 
     for (const department of state.graph.departments) {
+      if (!core.departmentLabelEligible(department.department_id, state.view.departments)) {
+        continue;
+      }
       const nodes = groups.get(department.department_id);
       if (!nodes?.length) continue;
       const points = nodes.map((node) => worldToScreen(node, now, transform));
@@ -1210,7 +1231,7 @@
       const details = [
         Number.isInteger(work.year) ? work.year : "Undated",
         work.topic,
-        work.citations ? `${formatNumber(work.citations)} citations` : "",
+        work.citations ? plural(work.citations, "citation") : "",
         work.source_types?.includes("curated_verified")
           && !work.source_types.includes("scholar")
           ? "Citation count unavailable"
@@ -1599,9 +1620,9 @@
     });
 
     elements.clear.addEventListener("click", resetFilters);
-    elements.fit.addEventListener("click", () => refitCurrent({ animate: true }));
-    elements.reset.addEventListener("click", resetFilters);
-    elements.zoomFit.addEventListener("click", () => refitCurrent({ animate: true }));
+    elements.fit.addEventListener("click", () => fitVisible({ animate: true }));
+    elements.reset.addEventListener("click", () => refitCurrent({ animate: true }));
+    elements.zoomFit.addEventListener("click", () => fitVisible({ animate: true }));
     elements.zoomIn.addEventListener("click", () => zoomAt(1.24));
     elements.zoomOut.addEventListener("click", () => zoomAt(1 / 1.24));
     elements.copy.addEventListener("click", async () => {

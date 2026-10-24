@@ -2,7 +2,7 @@
 
 [![Deploy collaboration graph](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml/badge.svg)](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml)
 [![Live site](https://img.shields.io/website?url=https%3A%2F%2Fcmccomb.github.io%2Fmap-of-collaboration%2F&label=live%20site)](https://cmccomb.github.io/map-of-collaboration/)
-[![Coverage threshold](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen)](#checks)
+[![Line coverage: 98.50%](https://img.shields.io/badge/line%20coverage-98.50%25-brightgreen)](#checks)
 [![License: MIT](https://img.shields.io/github/license/cmccomb/map-of-collaboration)](LICENSE)
 
 An interactive coauthorship graph built from the canonical
@@ -20,7 +20,9 @@ publications behind every displayed connection.
 The default layout emphasizes the overall collaboration structure. Two
 shareable department views make links between groups easier to trace: an
 organic force layout with tunable cross-department distance, and a compact grid
-that keeps affiliation clusters aligned.
+that keeps affiliation clusters aligned. With department filters active,
+faculty admitted through a secondary appointment join a selected affiliation's
+layout cluster while retaining their primary-affiliation color.
 
 ## What this graph does—and does not—show
 
@@ -54,8 +56,10 @@ npm run check
 npm test
 ```
 
-The test command enforces at least 90% line, branch, and function coverage
-across the graph logic and site-build pipeline.
+The current 35-test suite reports **98.50% line coverage**, **91.51% branch
+coverage**, and **98.16% function coverage** across the instrumented graph
+logic and site-build pipeline. The test command enforces a 90% minimum for all
+three measures.
 
 ## Deployment
 
@@ -98,15 +102,18 @@ relationships. It does not infer identities from free-text author lists.
 External coauthors have no CMU school, department, or faculty role. They remain
 separate from CMU faculty and school counts. The current pilot catalogs only
 Paul Erdős as an external historical coauthor; it does not index every outside
-collaborator. An MCS school or Mathematical
-Sciences department filter retains Tetali because he belongs to the selected
-group. The Tetali–Erdős edge appears when **Show Erdős** is turned on; the
-toggle is off by default and can be shared with `?external=1`. The edge is not
-classified as cross-school or cross-department. The graph retains publisher
-and institutional verification links on shared works and labels the external
-node in search, details, the color key, and CSV export. The normal Engineering artifact, which has no
+collaborator. An MCS school or Mathematical Sciences department filter retains
+Tetali because he belongs to the selected group. The Tetali–Erdős edge appears
+when **Show Erdős** is turned on; the toggle is off by default and can be
+shared with `?external=1`. The edge is not classified as cross-school or
+cross-department. The graph retains publisher and institutional verification
+links on shared works and labels the external node in search, details, the
+color key, and CSV export. The normal Engineering artifact, which has no
 external coauthor catalog, keeps its original behavior.
 
+The local SCS and MCS roster preview catalogs 811 CMU faculty across the three
+schools. Most newly cataloged people have no cached publications yet, so the
+graph is an observed subset rather than a complete school coauthorship map.
 The committed `map-config.json` remains pointed at the published Engineering
-dataset. A school pilot requires a separately reviewed publication artifact
-and a preview build before changing the public source.
+dataset. A school preview requires a separately reviewed publication artifact
+before changing the public source.

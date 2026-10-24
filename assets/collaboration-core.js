@@ -473,9 +473,32 @@
 
   function facultyLabelEligible(node, selectedDepartmentIds = []) {
     const departments = uniqueStrings(node?.departments);
-    if (departments.length <= 1) return true;
     const selectedDepartments = new Set(uniqueStrings(selectedDepartmentIds));
-    return departments.some((departmentId) => selectedDepartments.has(departmentId));
+    if (!selectedDepartments.size) return departments.length === 1;
+    const primaryDepartment = String(node?.primary_department || departments[0] || "").trim();
+    return selectedDepartments.has(primaryDepartment);
+  }
+
+  function departmentLabelEligible(departmentId, selectedDepartmentIds = []) {
+    const selectedDepartments = new Set(uniqueStrings(selectedDepartmentIds));
+    return (
+      !selectedDepartments.size ||
+      selectedDepartments.has(String(departmentId || "").trim())
+    );
+  }
+
+  function layoutDepartmentId(node, selectedDepartmentIds = []) {
+    if (node?.kind === "external_coauthor") return layoutGroup(node);
+    const departments = uniqueStrings(node?.departments);
+    const primaryDepartment = String(node?.primary_department || departments[0] || "").trim();
+    const selectedDepartments = new Set(uniqueStrings(selectedDepartmentIds));
+    if (!selectedDepartments.size || selectedDepartments.has(primaryDepartment)) {
+      return primaryDepartment;
+    }
+    return (
+      departments.find((departmentId) => selectedDepartments.has(departmentId)) ||
+      primaryDepartment
+    );
   }
 
   function connectionsForNode(filtered, nodeId) {
@@ -529,6 +552,10 @@
     return (hash >>> 0) / 4294967295;
   }
 
+  function departmentSeparation(level) {
+    return [0, 1, 2, 3, 6, 12][clamp(integer(level, 3), 1, 5)];
+  }
+
   function layoutSeed(nodes, variant) {
     const positions = new Map();
     if (variant !== "source") {
@@ -579,23 +606,37 @@
   function simulateLayout(
     filtered,
     seed,
-    { departmentSpacing = 0, departmentAnchors = new Map() } = {},
+    {
+      departmentSpacing = 0,
+      departmentAnchors = new Map(),
+      departmentByNode = new Map(),
+    } = {},
   ) {
     const nodes = filtered.nodes;
     const departmental = departmentSpacing > 0;
-    const openness = clamp(integer(departmentSpacing, 3), 1, 5);
+    const openness = departmentSeparation(departmentSpacing);
     const nodeIndex = new Map(nodes.map((node, index) => [node.id, index]));
+    const nodeDepartments = nodes.map(
+      (node) => departmentByNode.get(node.id) || node.primary_department,
+    );
     const x = nodes.map((node) => seed.get(node.id).x);
     const y = nodes.map((node) => seed.get(node.id).y);
     const dx = new Float64Array(nodes.length);
     const dy = new Float64Array(nodes.length);
     const edgePairs = filtered.edges
-      .map((edge) => ({
-        source: nodeIndex.get(edge.source),
-        target: nodeIndex.get(edge.target),
-        weight: 0.82 + Math.log1p(edge.count || 1) * 0.16,
-        crossDepartment: Boolean(edge.cross_department),
-      }))
+      .map((edge) => {
+        const source = nodeIndex.get(edge.source);
+        const target = nodeIndex.get(edge.target);
+        return {
+          source,
+          target,
+          weight: 0.82 + Math.log1p(edge.count || 1) * 0.16,
+          crossDepartment:
+            departmental && source !== undefined && target !== undefined
+              ? nodeDepartments[source] !== nodeDepartments[target]
+              : Boolean(edge.cross_department),
+        };
+      })
       .filter((edge) => edge.source !== undefined && edge.target !== undefined);
     const spacing = Math.max(0.12, 2.25 / Math.sqrt(Math.max(1, nodes.length)));
     const baseIterations = nodes.length <= 55 ? 220 : nodes.length <= 140 ? 165 : 115;
@@ -616,8 +657,7 @@
             deltaY = Math.sin(angle) * 0.0001;
             distance = 0.0001;
           }
-          const differentDepartments =
-            layoutGroup(nodes[left]) !== layoutGroup(nodes[right]);
+          const differentDepartments = nodeDepartments[left] !== nodeDepartments[right];
           const repulsionMultiplier =
             departmental && differentDepartments ? 1 + openness * 0.22 : 1;
           const force = ((spacing * spacing) / distance) * repulsionMultiplier;
@@ -653,7 +693,7 @@
         (departmental ? 0.2 : 0.17) * Math.pow(1 - progress, 1.55) + 0.002;
       for (let index = 0; index < nodes.length; index += 1) {
         if (departmental) {
-          const anchor = departmentAnchors.get(layoutGroup(nodes[index]));
+          const anchor = departmentAnchors.get(nodeDepartments[index]);
           if (anchor) {
             const anchorStrength = 0.3 + openness * 0.035;
             dx[index] += (anchor.x - x[index]) * anchorStrength;
@@ -734,14 +774,17 @@
     return candidates[0].positions;
   }
 
-  function departmentGridLayout(filtered, graph) {
+  function departmentGridLayout(filtered, graph, selectedDepartmentIds = []) {
     if (!filtered?.nodes?.length) return new Map();
 
+    const departmentByNode = new Map(
+      filtered.nodes.map((node) => [node.id, layoutDepartmentId(node, selectedDepartmentIds)]),
+    );
     const groups = new Map();
     for (const node of filtered.nodes) {
-      const group = layoutGroup(node);
-      if (!groups.has(group)) groups.set(group, []);
-      groups.get(group).push(node);
+      const departmentId = departmentByNode.get(node.id);
+      if (!groups.has(departmentId)) groups.set(departmentId, []);
+      groups.get(departmentId).push(node);
     }
     const activeDepartmentIds = [
       ...graph.departments
@@ -759,13 +802,16 @@
     for (const edge of filtered.edges) {
       const source = filtered.nodeById.get(edge.source);
       const target = filtered.nodeById.get(edge.target);
-      if (!source || !target || layoutGroup(source) === layoutGroup(target)) continue;
+      if (!source || !target) continue;
+      const sourceDepartment = departmentByNode.get(source.id);
+      const targetDepartment = departmentByNode.get(target.id);
+      if (sourceDepartment === targetDepartment) continue;
       const weight = Math.max(1, edge.count || 1);
       crossStrengthByNode.set(source.id, crossStrengthByNode.get(source.id) + weight);
       crossStrengthByNode.set(target.id, crossStrengthByNode.get(target.id) + weight);
       for (const [left, right] of [
-        [layoutGroup(source), layoutGroup(target)],
-        [layoutGroup(target), layoutGroup(source)],
+        [sourceDepartment, targetDepartment],
+        [targetDepartment, sourceDepartment],
       ]) {
         crossStrengthByDepartment.set(left, crossStrengthByDepartment.get(left) + weight);
         adjacency.get(left).set(right, (adjacency.get(left).get(right) || 0) + weight);
@@ -829,21 +875,30 @@
     return positions;
   }
 
-  function departmentForceLayout(filtered, graph, requestedSpacing = 3) {
+  function departmentForceLayout(
+    filtered,
+    graph,
+    requestedSpacing = 3,
+    selectedDepartmentIds = [],
+  ) {
     if (!filtered?.nodes?.length) return new Map();
     if (filtered.nodes.length === 1) {
       return new Map([[filtered.nodes[0].id, { x: 0, y: 0 }]]);
     }
 
-    const openness = clamp(integer(requestedSpacing, 3), 1, 5);
-    const gridSeed = departmentGridLayout(filtered, graph);
+    const spacingLevel = clamp(integer(requestedSpacing, 3), 1, 5);
+    const openness = departmentSeparation(spacingLevel);
+    const departmentByNode = new Map(
+      filtered.nodes.map((node) => [node.id, layoutDepartmentId(node, selectedDepartmentIds)]),
+    );
+    const gridSeed = departmentGridLayout(filtered, graph, selectedDepartmentIds);
     const nodesByDepartment = new Map();
     for (const node of filtered.nodes) {
-      const group = layoutGroup(node);
-      if (!nodesByDepartment.has(group)) {
-        nodesByDepartment.set(group, []);
+      const departmentId = departmentByNode.get(node.id);
+      if (!nodesByDepartment.has(departmentId)) {
+        nodesByDepartment.set(departmentId, []);
       }
-      nodesByDepartment.get(group).push(node);
+      nodesByDepartment.get(departmentId).push(node);
     }
 
     const gridCenters = new Map();
@@ -864,9 +919,10 @@
     );
     const seed = new Map();
     for (const node of filtered.nodes) {
+      const departmentId = departmentByNode.get(node.id);
       const point = gridSeed.get(node.id);
-      const center = gridCenters.get(layoutGroup(node));
-      const anchor = departmentAnchors.get(layoutGroup(node));
+      const center = gridCenters.get(departmentId);
+      const anchor = departmentAnchors.get(departmentId);
       const angle = layoutHash(`department-force|${node.id}`) * Math.PI * 2;
       const jitter = 0.01 + layoutHash(`department-jitter|${node.id}`) * 0.014;
       seed.set(node.id, {
@@ -876,8 +932,9 @@
     }
 
     return simulateLayout(filtered, seed, {
-      departmentSpacing: openness,
+      departmentSpacing: spacingLevel,
       departmentAnchors,
+      departmentByNode,
     });
   }
 
@@ -993,6 +1050,7 @@
     defaultState,
     departmentForceLayout,
     departmentGridLayout,
+    departmentLabelEligible,
     doiUrl,
     edgeKey,
     edgeCrossingCount,
@@ -1000,6 +1058,7 @@
     facultyLabelEligible,
     facultyMatches,
     filterGraph,
+    layoutDepartmentId,
     parseGraph,
     safeExternalUrl,
     selectionLayout,
