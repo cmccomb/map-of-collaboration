@@ -41,6 +41,9 @@
     departmentSpacingControl: document.querySelector("#department-spacing-control"),
     departmentSpacing: document.querySelector("#department-spacing"),
     departmentSpacingOutput: document.querySelector("#department-spacing-output"),
+    schoolSpacingControl: document.querySelector("#school-spacing-control"),
+    schoolSpacing: document.querySelector("#school-spacing"),
+    schoolSpacingOutput: document.querySelector("#school-spacing-output"),
     coverageNote: document.querySelector("#coverage-note"),
     retry: document.querySelector("#retry-load"),
     clear: document.querySelector("#clear-filters"),
@@ -108,7 +111,18 @@
   }
 
   function departmentSpacingLabel(value) {
-    return ["", "Close", "Compact", "Balanced", "Open", "Far"][Number(value)] || "Balanced";
+    const level = Number(value);
+    const labels = [
+      "", "Close", "Compact", "Balanced", "Open", "Far",
+      "Very far", "Wide", "Wider", "Farther", "Maximum",
+    ];
+    const label = labels[level];
+    return `${label || "Balanced"} · ${level}/10`;
+  }
+
+  function schoolSpacingLabel(value) {
+    const level = Number(value);
+    return level === 0 ? "Neutral · 0/10" : `${level}/10`;
   }
 
   function isDepartmentLayout(layout = state.view?.layout) {
@@ -350,7 +364,15 @@
     });
     elements.departmentSpacing.value = String(view.departmentSpacing);
     elements.departmentSpacingOutput.textContent = departmentSpacingLabel(view.departmentSpacing);
+    elements.departmentSpacing.setAttribute(
+      "aria-valuetext", departmentSpacingLabel(view.departmentSpacing),
+    );
     elements.departmentSpacingControl.hidden = view.layout !== "department-force";
+    elements.schoolSpacing.value = String(view.schoolSpacing);
+    elements.schoolSpacingOutput.textContent = schoolSpacingLabel(view.schoolSpacing);
+    elements.schoolSpacing.setAttribute("aria-valuetext", schoolSpacingLabel(view.schoolSpacing));
+    elements.schoolSpacingControl.hidden =
+      view.layout !== "department-force" || state.graph.schools.length <= 1;
     renderSelectedFaculty();
   }
 
@@ -495,7 +517,7 @@
     const availableHeight = Math.max(120, viewport.bottom - viewport.top);
     const scale = Math.min(
       maximumScale,
-      Math.max(45, Math.min(availableWidth / spanX, availableHeight / spanY) * 0.82),
+      Math.max(1, Math.min(availableWidth / spanX, availableHeight / spanY) * 0.82),
     );
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
@@ -530,6 +552,7 @@
             state.graph,
             state.view.departmentSpacing,
             state.view.departments,
+            state.view.schoolSpacing,
           )
         : state.view.layout === "departments"
           ? core.departmentGridLayout(selection, state.graph, state.view.departments)
@@ -577,6 +600,7 @@
               state.graph,
               state.view.departmentSpacing,
               state.view.departments,
+              state.view.schoolSpacing,
             )
           : state.view.layout === "departments"
             ? core.departmentGridLayout(state.filtered, state.graph, state.view.departments)
@@ -591,7 +615,7 @@
   function zoomAt(factor, x = state.width / 2, y = state.height / 2) {
     settleTransition();
     const oldScale = state.transform.k;
-    const nextScale = Math.min(1400, Math.max(40, oldScale * factor));
+    const nextScale = Math.min(1400, Math.max(1, oldScale * factor));
     const actualFactor = nextScale / oldScale;
     state.transform.x = x - (x - state.transform.x) * actualFactor;
     state.transform.y = y - (y - state.transform.y) * actualFactor;
@@ -1611,10 +1635,21 @@
       applyView({ fit: true, animate: true });
     });
     elements.departmentSpacing.addEventListener("input", () => {
+      const label = departmentSpacingLabel(elements.departmentSpacing.value);
+      elements.departmentSpacingOutput.textContent = label;
+      elements.departmentSpacing.setAttribute("aria-valuetext", label);
+    });
+    elements.departmentSpacing.addEventListener("change", () => {
       state.view.departmentSpacing = Number(elements.departmentSpacing.value);
-      elements.departmentSpacingOutput.textContent = departmentSpacingLabel(
-        state.view.departmentSpacing,
-      );
+      applyView({ fit: true, animate: true });
+    });
+    elements.schoolSpacing.addEventListener("input", () => {
+      const label = schoolSpacingLabel(elements.schoolSpacing.value);
+      elements.schoolSpacingOutput.textContent = label;
+      elements.schoolSpacing.setAttribute("aria-valuetext", label);
+    });
+    elements.schoolSpacing.addEventListener("change", () => {
+      state.view.schoolSpacing = Number(elements.schoolSpacing.value);
       applyView({ fit: true, animate: true });
     });
     elements.detailContent.addEventListener("click", (event) => {
