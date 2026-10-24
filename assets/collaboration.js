@@ -226,6 +226,13 @@
     elements.departmentOptions.querySelectorAll("input").forEach((input) => {
       input.checked = selectedDepartments.has(input.value);
     });
+    elements.departmentLegend.querySelectorAll("button[data-department-id]").forEach((button) => {
+      if (selectedDepartments.has(button.dataset.departmentId)) {
+        button.setAttribute("aria-current", "true");
+      } else {
+        button.removeAttribute("aria-current");
+      }
+    });
     elements.yearMin.value = String(view.fromYear);
     elements.yearMax.value = String(view.toYear);
     elements.strength.value = String(view.minimum);
@@ -1096,7 +1103,7 @@
       const details = [
         Number.isInteger(work.year) ? work.year : "Undated",
         work.topic,
-        work.citations ? `${formatNumber(work.citations)} citations` : "",
+        work.citations ? plural(work.citations, "citation") : "",
       ].filter(Boolean);
       item.append(element("span", "publication-meta", details.join(" · ")));
       list.append(item);
@@ -1445,9 +1452,9 @@
     });
 
     elements.clear.addEventListener("click", resetFilters);
-    elements.fit.addEventListener("click", () => refitCurrent({ animate: true }));
-    elements.reset.addEventListener("click", resetFilters);
-    elements.zoomFit.addEventListener("click", () => refitCurrent({ animate: true }));
+    elements.fit.addEventListener("click", () => fitVisible({ animate: true }));
+    elements.reset.addEventListener("click", () => refitCurrent({ animate: true }));
+    elements.zoomFit.addEventListener("click", () => fitVisible({ animate: true }));
     elements.zoomIn.addEventListener("click", () => zoomAt(1.24));
     elements.zoomOut.addEventListener("click", () => zoomAt(1 / 1.24));
     elements.copy.addEventListener("click", async () => {
