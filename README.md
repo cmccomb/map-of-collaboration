@@ -2,7 +2,7 @@
 
 [![Deploy collaboration graph](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml/badge.svg)](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml)
 [![Live site](https://img.shields.io/website?url=https%3A%2F%2Fcmccomb.github.io%2Fmap-of-collaboration%2F&label=live%20site)](https://cmccomb.github.io/map-of-collaboration/)
-[![Line coverage: 98.53%](https://img.shields.io/badge/line%20coverage-98.53%25-brightgreen)](#checks)
+[![Line coverage: 98.57%](https://img.shields.io/badge/line%20coverage-98.57%25-brightgreen)](#checks)
 [![License: MIT](https://img.shields.io/github/license/cmccomb/map-of-collaboration)](LICENSE)
 
 An interactive coauthorship graph built from the canonical
@@ -22,13 +22,14 @@ shareable department views make links between groups easier to trace: an
 organic force layout with tunable cross-department and cross-college distance,
 and a compact grid that keeps affiliation clusters aligned. With department filters active,
 faculty admitted through a secondary appointment join a selected affiliation's
-layout cluster while retaining their primary-affiliation color.
+layout cluster. A selected school also determines their node color.
 
-A school selection keeps outward CMU collaborators in Collaboration and Dept.
-force. In Dept. grid, it limits CMU faculty and links to the selected schools,
-shows only their department clusters, and places cross-appointed faculty in a
-department of a selected school. The optional Erdős node remains available for
-an observed link to a selected-school faculty member.
+A school selection limits CMU faculty and collaborations to the selected schools
+in every layout. Department controls and the color key show those schools'
+departments. Cross-appointed faculty remain visible when one of their school
+memberships is selected, and take the color and layout group of a selected-school
+department. The optional Erdős node remains available for an observed link to a
+selected-school faculty member.
 
 The department force layout keeps its previous default (department distance
 `3`) and now offers levels `1`–`10`. Cross-college distance has a separate
@@ -70,8 +71,8 @@ npm run check
 npm test
 ```
 
-The current 36-test suite reports **98.53% line coverage**, **91.37% branch
-coverage**, and **98.17% function coverage** across the instrumented graph
+The current 39-test suite reports **98.57% line coverage**, **91.22% branch
+coverage**, and **98.24% function coverage** across the instrumented graph
 logic and site-build pipeline. The test command enforces a 90% minimum for all
 three measures.
 
@@ -98,11 +99,9 @@ artifact: `catalogs.schools` with `school_id`, `title`, and `directory_url`;
 still comes only from shared `points[].faculty_ids`. Existing Engineering-only
 artifacts without school fields resolve to one `engineering` school.
 
-`?schools=scs` shows an observed edge when **either** endpoint belongs to SCS
-in Collaboration and Dept. force, so collaborators in another school remain
-visible. In Dept. grid, both CMU endpoints must belong to a selected school;
-the optional historical coauthor can appear through a selected-school faculty
-link. Existing `?departments=`
+`?schools=scs` shows a CMU faculty edge only when **both** endpoints belong to
+SCS, in every layout. The optional historical coauthor can appear through a
+selected-school faculty link when enabled. Existing `?departments=`
 links keep their original rule for faculty pairs: both endpoints must belong to
 a selected department or program. `?cross_school=1` selects faculty pairs with
 no school in common; this is separate from the existing cross-department filter.
