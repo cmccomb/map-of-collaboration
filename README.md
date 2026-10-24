@@ -89,7 +89,7 @@ no school in common; this is separate from the existing cross-department filter.
 ## Verified historical coauthors
 
 The publication artifact may supply `catalogs.external_coauthors` with a
-stable `person_id`, name, and public identity source URL. A publication point
+stable `person_id`, name, and public coauthor source URL. A publication point
 may name one of these IDs in `external_coauthor_ids` only when it also has a
 `curated_verified` source type and a public paper-level verification URL. The
 builder adds an external node and a coauthorship edge only for those exact work
