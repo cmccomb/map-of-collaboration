@@ -279,8 +279,8 @@ test("typed academic homes separate school fallbacks, areas, institutes, and unr
       "Heinz College", "school_fallback"),
     faculty("e", ["iii"], ["engineering"], "institute", "iii",
       "Integrated Innovation Institute"),
-    faculty("f", ["cmu-africa"], ["engineering"], "department", "cmu-africa",
-      "CMU-Africa"),
+    faculty("f", ["cmu-africa", "ece"], ["engineering"], "department", "cmu-africa",
+      "CMU-Africa", "display_tie_break_first_listed"),
     faculty("g", ["ece", "iii"], ["engineering"], "unresolved", "", ""),
     faculty("h", ["heinz-faculty", "heinz-ppm"], ["heinz"], "constituent_school",
       "heinz-ppm", "School of Public Policy and Management"),
@@ -300,12 +300,18 @@ test("typed academic homes separate school fallbacks, areas, institutes, and unr
     item.source === left && item.target === right);
   assert.equal(node("a").primary_academic_home_type, "school");
   assert.equal(node("a").primary_academic_home_basis, "school_fallback");
+  assert.equal(core.academicHomeDisplayText(node("a"), "Tepper School of Business"),
+    "Primary academic home: Tepper School of Business (school; school-level home; no narrower unit verified)");
   assert.equal(node("a").primary_department, "");
   assert.equal(node("a").primary_home_group, "school:tepper");
   assert.equal(node("b").primary_home_group, "academic_area:tepper:finance");
   assert.equal(node("c").primary_academic_home_type, "constituent_school");
   assert.equal(node("e").primary_academic_home_type, "institute");
   assert.equal(node("f").primary_department, "cmu-africa");
+  assert.deepEqual(node("f").departments, ["cmu-africa", "ece"]);
+  assert.equal(node("f").primary_academic_home_basis, "display_tie_break_first_listed");
+  assert.equal(core.academicHomeDisplayText(node("f"), "CMU-Africa"),
+    "Map display home: CMU-Africa (department; display tie-break: first-listed department)");
   assert.equal(node("g").primary_home_group, "");
   assert.deepEqual(node("g").departments, ["ece", "iii"]);
   assert.equal(core.layoutDepartmentId(node("a"), [], parsed, ["tepper"]), "school:tepper");

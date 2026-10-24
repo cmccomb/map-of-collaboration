@@ -337,7 +337,7 @@
 
   function updateLegendAffiliation() {
     document.querySelector(".legend-heading h2").textContent = "Academic home color";
-    document.querySelector(".legend-heading p").textContent = "Reviewed or inferred primary display home";
+    document.querySelector(".legend-heading p").textContent = "Color follows each person's labeled map display home";
   }
 
   function renderExternalLegend() {
@@ -1210,21 +1210,7 @@
         const title = node.primary_academic_home_title
           || state.graph.academicHomeByGroup.get(node.primary_home_group)?.title
           || node.primary_academic_home_id;
-        const basis = {
-          inferred_advisee_count: "inferred from PhD advisees",
-          inferred_profile_title: "inferred from faculty title",
-          reviewed: "reviewed",
-          single_included_membership: "sole included academic unit",
-          school_fallback: "school-level home; no narrower unit verified",
-        }[node.primary_academic_home_basis] || "display choice";
-        const typeLabel = {
-          department: "department",
-          constituent_school: "constituent school",
-          institute: "institute",
-          academic_area: "academic area",
-          school: "school",
-        }[node.primary_academic_home_type] || "academic home";
-        primary.append(document.createTextNode(`Primary academic home: ${title} (${typeLabel}; ${basis})`));
+        primary.append(document.createTextNode(core.academicHomeDisplayText(node, title)));
         if (node.primary_academic_home_source_url) {
           const source = element("a", "", "Evidence ↗");
           source.href = node.primary_academic_home_source_url;

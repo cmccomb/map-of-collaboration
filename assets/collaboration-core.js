@@ -54,6 +54,26 @@
     return cleaned ? `https://doi.org/${encodeURI(cleaned)}` : "";
   }
 
+  function academicHomeDisplayText(node, title) {
+    const tieBreak = node.primary_academic_home_basis === "display_tie_break_first_listed";
+    const basis = {
+      display_tie_break_first_listed: "display tie-break: first-listed department",
+      inferred_advisee_count: "inferred from PhD advisees",
+      inferred_profile_title: "inferred from faculty title",
+      reviewed: "reviewed",
+      single_included_membership: "sole included academic unit",
+      school_fallback: "school-level home; no narrower unit verified",
+    }[node.primary_academic_home_basis] || "display choice";
+    const typeLabel = {
+      department: "department",
+      constituent_school: "constituent school",
+      institute: "institute",
+      academic_area: "academic area",
+      school: "school",
+    }[node.primary_academic_home_type] || "academic home";
+    return `${tieBreak ? "Map display home" : "Primary academic home"}: ${title} (${typeLabel}; ${basis})`;
+  }
+
   function parseGraph(input) {
     assert(input && typeof input === "object", "Graph artifact must be an object");
     assert(
@@ -1304,6 +1324,7 @@
   return Object.freeze({
     GRAPH_SCHEMA_VERSION,
     UNRESOLVED_LAYOUT_GROUP,
+    academicHomeDisplayText,
     collaborationLayout,
     connectionsForNode,
     defaultState,
