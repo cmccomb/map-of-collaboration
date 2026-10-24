@@ -476,6 +476,8 @@ test("department force layout is deterministic, organic, and tunably separated",
   const balanced = core.departmentForceLayout(filtered, graph, 3);
   const repeated = core.departmentForceLayout(filtered, graph, 3);
   const close = core.departmentForceLayout(filtered, graph, 1);
+  const compact = core.departmentForceLayout(filtered, graph, 2);
+  const open = core.departmentForceLayout(filtered, graph, 4);
   const far = core.departmentForceLayout(filtered, graph, 5);
 
   assert.deepEqual(balanced, repeated);
@@ -492,6 +494,11 @@ test("department force layout is deterministic, organic, and tunably separated",
     return Math.hypot(one.x - positions.get("c").x, one.y - positions.get("c").y);
   };
   assert.ok(departmentDistance(far) > departmentDistance(close));
+  assert.ok(departmentDistance(far) > departmentDistance(balanced) * 1.5);
+  assert.ok(
+    departmentDistance(far) - departmentDistance(open) >
+      departmentDistance(balanced) - departmentDistance(compact),
+  );
   assert.deepEqual(core.departmentForceLayout(filtered, graph, 99), far);
   assert.deepEqual(core.departmentForceLayout({ nodes: [] }, graph), new Map());
   assert.deepEqual(

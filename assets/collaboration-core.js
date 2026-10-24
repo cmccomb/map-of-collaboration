@@ -417,6 +417,10 @@
     return (hash >>> 0) / 4294967295;
   }
 
+  function departmentSeparation(level) {
+    return [0, 1, 2, 3, 6, 12][clamp(integer(level, 3), 1, 5)];
+  }
+
   function layoutSeed(nodes, variant) {
     const positions = new Map();
     if (variant !== "source") {
@@ -471,7 +475,7 @@
   ) {
     const nodes = filtered.nodes;
     const departmental = departmentSpacing > 0;
-    const openness = clamp(integer(departmentSpacing, 3), 1, 5);
+    const openness = departmentSeparation(departmentSpacing);
     const nodeIndex = new Map(nodes.map((node, index) => [node.id, index]));
     const x = nodes.map((node) => seed.get(node.id).x);
     const y = nodes.map((node) => seed.get(node.id).y);
@@ -722,7 +726,8 @@
       return new Map([[filtered.nodes[0].id, { x: 0, y: 0 }]]);
     }
 
-    const openness = clamp(integer(requestedSpacing, 3), 1, 5);
+    const spacingLevel = clamp(integer(requestedSpacing, 3), 1, 5);
+    const openness = departmentSeparation(spacingLevel);
     const gridSeed = departmentGridLayout(filtered, graph);
     const nodesByDepartment = new Map();
     for (const node of filtered.nodes) {
@@ -762,7 +767,7 @@
     }
 
     return simulateLayout(filtered, seed, {
-      departmentSpacing: openness,
+      departmentSpacing: spacingLevel,
       departmentAnchors,
     });
   }
