@@ -35,6 +35,8 @@ in every layout. Department controls show included unit memberships; the color
 key shows documented primary academic homes. Cross-appointed faculty remain
 visible when one of their school memberships is selected. The optional Erdős
 node remains available for an observed link to a selected-school faculty member.
+Add people suggestions and person IDs in shared URLs obey the active school and
+unit selections; an out-of-scope person cannot add neighboring nodes.
 
 The home force layout keeps its previous default (home distance
 `3`) and offers levels `1`–`10`. School and college are the same top-level
