@@ -89,15 +89,74 @@ function fixture() {
   };
 }
 
+function schoolFixture() {
+  const value = fixture();
+  value.schools = [
+    { school_id: "engineering", title: "College of Engineering" },
+    { school_id: "scs", title: "School of Computer Science" },
+  ];
+  value.departments[0].school_id = "engineering";
+  value.departments[1].school_id = "scs";
+  value.nodes[0].school_ids = ["engineering"];
+  value.nodes[1].school_ids = ["engineering"];
+  value.nodes[2].school_ids = ["scs"];
+  value.edges[1].cross_school = true;
+  return value;
+}
+
 test("parseGraph validates and indexes the graph", () => {
   const graph = core.parseGraph(fixture());
   assert.equal(graph.nodes.length, 3);
   assert.equal(graph.nodeById.get("a").name, "Ada Alpha");
   assert.equal(graph.edgeById.get("a|b").works.length, 2);
+  assert.deepEqual(graph.nodeById.get("a").school_ids, ["engineering"]);
+  assert.equal(graph.schoolById.get("engineering").title, "College of Engineering");
+  assert.equal(core.stateFromSearch("?cross_school=1", graph).crossSchool, false);
   assert.throws(
     () => core.parseGraph({ ...fixture(), schema_version: 99 }),
     /Unsupported graph schema/,
   );
+});
+
+test("school filters preserve outward edges and legacy department links", () => {
+  const graph = core.parseGraph(schoolFixture());
+  assert.deepEqual(graph.schools.map((school) => school.school_id), ["engineering", "scs"]);
+  assert.equal(graph.edgeById.get("b|c").cross_school, true);
+  const state = core.stateFromSearch("?schools=scs,missing&cross_school=1", graph);
+  assert.deepEqual(state.schools, ["scs"]);
+  assert.equal(state.crossSchool, true);
+  assert.equal(core.stateToSearch(state, graph), "?schools=scs&cross_school=1");
+  const scs = core.filterGraph(graph, state);
+  assert.deepEqual(scs.edges.map((edge) => edge.id), ["b|c"]);
+  assert.deepEqual(scs.nodes.map((node) => node.id).sort(), ["b", "c"]);
+  assert.match(core.edgesToCsv(graph, scs), /cross_department,cross_school/);
+  assert.match(core.edgesToCsv(graph, scs), /Bela Beta,Cora Gamma,1,,,yes,yes/);
+  const department = core.filterGraph(graph, {
+    ...core.defaultState(graph),
+    departments: ["two"],
+  });
+  assert.deepEqual(department.edges, []);
+  const unconnected = core.filterGraph(graph, {
+    ...state,
+    minimum: 2,
+    showUnconnected: true,
+  });
+  assert.deepEqual(unconnected.nodes.map((node) => node.id), ["c"]);
+});
+
+test("parseGraph validates school joins", () => {
+  const cases = [
+    [(value) => (value.schools = []), /missing schools/],
+    [(value) => (value.schools[1].school_id = "engineering"), /duplicate school ID/],
+    [(value) => (value.departments[1].school_id = "missing"), /invalid school/],
+    [(value) => (value.nodes[2].school_ids = []), /invalid school memberships/],
+    [(value) => (value.nodes[2].school_ids = ["missing"]), /invalid school memberships/],
+  ];
+  for (const [mutate, pattern] of cases) {
+    const value = schoolFixture();
+    mutate(value);
+    assert.throws(() => core.parseGraph(value), pattern);
+  }
 });
 
 test("parseGraph rejects malformed graph relationships", () => {
@@ -302,10 +361,12 @@ test("URL state is bounded and round-trips", () => {
   );
   assert.deepEqual(state, {
     departments: ["two"],
+    schools: [],
     fromYear: 2020,
     toYear: 2024,
     minimum: 20,
     crossDepartment: true,
+    crossSchool: false,
     showUnconnected: true,
     layout: "department-force",
     departmentSpacing: 5,

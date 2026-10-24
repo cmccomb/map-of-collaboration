@@ -285,6 +285,27 @@ function deriveGraph(artifact, config, revision) {
   });
   const departmentIds = new Set(departments.map((department) => department.department_id));
   const departmentById = new Map(departments.map((department) => [department.department_id, department]));
+  const hasSchoolCatalog = Array.isArray(artifact.catalogs.schools);
+  const schools = hasSchoolCatalog
+    ? artifact.catalogs.schools.map((school) => ({
+        school_id: String(school.school_id || ""),
+        title: String(school.title || ""),
+        directory_url: String(school.directory_url || ""),
+        faculty_count: 0,
+      }))
+    : [{ school_id: "engineering", title: "College of Engineering", directory_url: "", faculty_count: 0 }];
+  const schoolIds = new Set(schools.map((school) => school.school_id));
+  assert(schools.length > 0 && schools.every((school) => school.school_id && school.title),
+    "Publication artifact has invalid schools");
+  assert(schoolIds.size === schools.length, "Publication artifact has duplicate school IDs");
+  const schoolById = new Map(schools.map((school) => [school.school_id, school]));
+  departments.forEach((department, index) => {
+    const schoolId = hasSchoolCatalog
+      ? String(artifact.catalogs.departments[index].school_id || "")
+      : "engineering";
+    assert(schoolIds.has(schoolId), `Department ${department.department_id} has an invalid school`);
+    department.school_id = schoolId;
+  });
 
   const facultyIds = new Set();
   const nodes = artifact.catalogs.faculty.map((person) => {
@@ -303,11 +324,23 @@ function deriveGraph(artifact, config, revision) {
     personDepartments.forEach((departmentId) => {
       departmentById.get(departmentId).faculty_count += 1;
     });
+    const personSchools = hasSchoolCatalog
+      ? [...new Set((Array.isArray(person.school_ids) ? person.school_ids : []).map(String))]
+      : ["engineering"];
+    assert(personSchools.length > 0 && personSchools.every((schoolId) => schoolIds.has(schoolId)),
+      `Faculty ${id} has invalid school memberships`);
+    assert(personDepartments.every((departmentId) => personSchools.includes(departmentById.get(departmentId).school_id)),
+      `Faculty ${id} has a department outside their schools`);
+    personSchools.forEach((schoolId) => {
+      schoolById.get(schoolId).faculty_count += 1;
+    });
     return {
       id,
       name: String(person.display_name || id),
       departments: personDepartments,
       primary_department: personDepartments[0],
+      school_ids: personSchools,
+      primary_school: personSchools[0],
       roles: [...new Set(memberships.map((membership) => String(membership.role || "faculty")))],
       publication_count: Math.max(0, Number(person.publication_count) || 0),
       mapped_publication_count: 0,
@@ -345,6 +378,10 @@ function deriveGraph(artifact, config, revision) {
       return false;
     });
     assert(validFaculty.length > 0, `Work ${workId} has no valid faculty relationship`);
+    if (Array.isArray(point.school_ids)) {
+      assert(point.school_ids.every((schoolId) => schoolIds.has(String(schoolId))),
+        `Work ${workId} has invalid school references`);
+    }
     validFaculty.forEach((facultyId) => {
       nodeById.get(facultyId).mapped_publication_count += 1;
     });
@@ -377,6 +414,10 @@ function deriveGraph(artifact, config, revision) {
             cross_department: !intersections(
               nodeById.get(source).departments,
               nodeById.get(target).departments,
+            ),
+            cross_school: !intersections(
+              nodeById.get(source).school_ids,
+              nodeById.get(target).school_ids,
             ),
             works: [],
           });
@@ -461,6 +502,7 @@ function deriveGraph(artifact, config, revision) {
       multiple_faculty_work_count: multipleFacultyWorkCount,
       pair_work_count: pairWorkCount,
       cross_department_edge_count: edges.filter((edge) => edge.cross_department).length,
+      cross_school_edge_count: edges.filter((edge) => edge.cross_school).length,
     },
     years: {
       minimum: Math.min(...datedYears),
@@ -468,6 +510,7 @@ function deriveGraph(artifact, config, revision) {
       missing_count: missingYearCount,
     },
     departments,
+    schools,
     nodes: nodes.sort((left, right) => left.name.localeCompare(right.name)),
     edges,
   };

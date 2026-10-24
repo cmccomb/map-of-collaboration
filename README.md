@@ -74,3 +74,22 @@ The browser never contacts Google Scholar or Hugging Face. The Pages build pins
 an immutable Hugging Face revision, derives `data/collaborations.json`, and
 ships that compact artifact with the site. The source publication artifact is
 not committed here.
+
+## School-aware pilot contract
+
+The graph builder also accepts additive school fields in the publication
+artifact: `catalogs.schools` with `school_id`, `title`, and `directory_url`;
+`catalogs.departments[].school_id`; and `catalogs.faculty[].school_ids`.
+`points[].school_ids` may be present for provenance, while coauthorship still
+comes only from shared `points[].faculty_ids`. Existing Engineering-only
+artifacts without school fields resolve to one `engineering` school.
+
+`?schools=scs` shows an observed edge when **either** endpoint belongs to SCS,
+so collaborators in another school remain visible. Existing `?departments=`
+links keep their original rule: both endpoints must belong to a selected
+department or program. `?cross_school=1` selects pairs with no school in
+common; this is separate from the existing cross-department filter.
+
+The committed `map-config.json` remains pointed at the published Engineering
+dataset. A school pilot requires a separately reviewed publication artifact
+and a preview build before changing the public source.
