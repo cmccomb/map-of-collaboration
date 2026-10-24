@@ -472,7 +472,7 @@ input[type="number"]:focus {
 
 .layout-options {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   width: 100%;
   padding: 0.14rem;
   border: 1px solid var(--line-strong);
@@ -506,6 +506,32 @@ input[type="number"]:focus {
 .layout-options input:focus-visible + span {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+
+.layout-tuning {
+  margin-top: 0.58rem;
+  padding: 0.56rem 0.08rem 0;
+  border-top: 1px solid var(--line);
+}
+
+.layout-tuning > label {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: baseline;
+  color: var(--label);
+  font-size: 0.64rem;
+  font-weight: 680;
+}
+
+.layout-tuning output {
+  color: var(--accent-strong);
+  font-size: 0.61rem;
+}
+
+.layout-tuning input {
+  width: 100%;
+  margin: 0.42rem 0 0;
 }
 
 .department-options {

@@ -17,10 +17,10 @@ in the selected year range. One or more faculty members can be selected to
 compare the union of their visible collaboration neighborhoods and inspect the
 publications behind every displayed connection.
 
-The default layout emphasizes the overall collaboration structure. A shareable
-department-cluster layout separates primary affiliations and places the most
-cross-departmental faculty toward the open center, making links between groups
-easier to trace.
+The default layout emphasizes the overall collaboration structure. Two
+shareable department views make links between groups easier to trace: an
+organic force layout with tunable cross-department distance, and a compact grid
+that keeps affiliation clusters aligned.
 
 ## What this graph does—and does not—show
 

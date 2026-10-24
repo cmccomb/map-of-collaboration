@@ -31,6 +31,9 @@
     crossDepartment: document.querySelector("#cross-department"),
     showUnconnected: document.querySelector("#show-unconnected"),
     layoutOptions: document.querySelector("#layout-options"),
+    departmentSpacingControl: document.querySelector("#department-spacing-control"),
+    departmentSpacing: document.querySelector("#department-spacing"),
+    departmentSpacingOutput: document.querySelector("#department-spacing-output"),
     coverageNote: document.querySelector("#coverage-note"),
     retry: document.querySelector("#retry-load"),
     clear: document.querySelector("#clear-filters"),
@@ -95,6 +98,14 @@
 
   function plural(value, singular, pluralForm = `${singular}s`) {
     return `${formatNumber(value)} ${value === 1 ? singular : pluralForm}`;
+  }
+
+  function departmentSpacingLabel(value) {
+    return ["", "Close", "Compact", "Balanced", "Open", "Far"][Number(value)] || "Balanced";
+  }
+
+  function isDepartmentLayout(layout = state.view?.layout) {
+    return layout === "department-force" || layout === "departments";
   }
 
   function departmentColor(departmentId) {
@@ -226,6 +237,9 @@
     elements.layoutOptions.querySelectorAll("input").forEach((input) => {
       input.checked = input.value === view.layout;
     });
+    elements.departmentSpacing.value = String(view.departmentSpacing);
+    elements.departmentSpacingOutput.textContent = departmentSpacingLabel(view.departmentSpacing);
+    elements.departmentSpacingControl.hidden = view.layout !== "department-force";
     renderSelectedFaculty();
   }
 
@@ -254,7 +268,11 @@
     }
     const suffix = [
       state.view.crossDepartment ? "cross-department" : "",
-      state.view.layout === "departments" ? "department clusters" : "",
+      state.view.layout === "department-force"
+        ? "organic department clusters"
+        : state.view.layout === "departments"
+          ? "department grid"
+          : "",
       state.view.selectedIds.length
         ? `${plural(state.view.selectedIds.length, "faculty member")} selected`
         : "",
@@ -390,9 +408,11 @@
     if (!selectedIds.length) return;
     const selection = core.subgraphForSelection(state.filtered, selectedIds);
     const positions =
-      state.view.layout === "departments"
-        ? core.departmentLayout(selection, state.graph)
-        : core.selectionLayout(state.filtered, selectedIds);
+      state.view.layout === "department-force"
+        ? core.departmentForceLayout(selection, state.graph, state.view.departmentSpacing)
+        : state.view.layout === "departments"
+          ? core.departmentGridLayout(selection, state.graph)
+          : core.selectionLayout(state.filtered, selectedIds);
     fitNodes(selection.nodes, {
       maximumScale: selection.edges.length ? 560 : 420,
       positions,
@@ -430,9 +450,11 @@
     if (state.view?.selectedIds.length) focusSelection({ animate });
     else {
       const positions =
-        state.view.layout === "departments"
-          ? core.departmentLayout(state.filtered, state.graph)
-          : spreadOverviewLayout(core.collaborationLayout(state.filtered));
+        state.view.layout === "department-force"
+          ? core.departmentForceLayout(state.filtered, state.graph, state.view.departmentSpacing)
+          : state.view.layout === "departments"
+            ? core.departmentGridLayout(state.filtered, state.graph)
+            : spreadOverviewLayout(core.collaborationLayout(state.filtered));
       fitNodes(state.filtered?.nodes || [], {
         positions,
         animate,
@@ -611,7 +633,7 @@
     context.globalAlpha = 1;
 
     const occupied = [];
-    if (state.view.layout === "departments" && !selectedIds.size) {
+    if (isDepartmentLayout() && !selectedIds.size) {
       drawDepartmentLabels(occupied, now, transform);
     }
     const nodesForLabels = state.filtered.nodes
@@ -1390,6 +1412,14 @@
     elements.layoutOptions.addEventListener("change", (event) => {
       if (!event.target.matches('input[name="graph-layout"]')) return;
       state.view.layout = event.target.value;
+      syncControls();
+      applyView({ fit: true, animate: true });
+    });
+    elements.departmentSpacing.addEventListener("input", () => {
+      state.view.departmentSpacing = Number(elements.departmentSpacing.value);
+      elements.departmentSpacingOutput.textContent = departmentSpacingLabel(
+        state.view.departmentSpacing,
+      );
       applyView({ fit: true, animate: true });
     });
     elements.detailContent.addEventListener("click", (event) => {

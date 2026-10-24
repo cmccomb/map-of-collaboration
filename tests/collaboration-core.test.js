@@ -297,7 +297,7 @@ test("URL state is bounded and round-trips", () => {
   const graph = core.parseGraph(fixture());
   assert.deepEqual(core.stateFromSearch("", graph), core.defaultState(graph));
   const state = core.stateFromSearch(
-    "?departments=two,missing&from=2010&to=2030&minimum=50&cross=1&unconnected=1&layout=departments&faculty=c,a,missing,c",
+    "?departments=two,missing&from=2010&to=2030&minimum=50&cross=1&unconnected=1&layout=department-force&spacing=5&faculty=c,a,missing,c",
     graph,
   );
   assert.deepEqual(state, {
@@ -307,12 +307,13 @@ test("URL state is bounded and round-trips", () => {
     minimum: 20,
     crossDepartment: true,
     showUnconnected: true,
-    layout: "departments",
+    layout: "department-force",
+    departmentSpacing: 5,
     selectedIds: ["c", "a"],
   });
   assert.equal(
     core.stateToSearch(state, graph),
-    "?departments=two&minimum=20&cross=1&unconnected=1&layout=departments&faculty=c%2Ca",
+    "?departments=two&minimum=20&cross=1&unconnected=1&layout=department-force&spacing=5&faculty=c%2Ca",
   );
   assert.deepEqual(core.stateFromSearch("?faculty=b", graph).selectedIds, ["b"]);
   assert.deepEqual(core.stateFromSearch("?from=2024&to=2020", graph), {
@@ -325,6 +326,12 @@ test("URL state is bounded and round-trips", () => {
     "",
   );
   assert.equal(core.stateFromSearch("?layout=unsupported", graph).layout, "collaboration");
+  assert.equal(core.stateFromSearch("?layout=departments", graph).layout, "departments");
+  assert.equal(core.stateFromSearch("?layout=department-force&spacing=99", graph).departmentSpacing, 5);
+  assert.equal(
+    core.stateToSearch({ ...core.defaultState(graph), departmentSpacing: undefined }, graph),
+    "",
+  );
   assert.deepEqual(core.validFacultyIds("a", graph), ["a"]);
 });
 
@@ -413,11 +420,11 @@ test("collaboration layout is deterministic and returns finite positions", () =>
   }
 });
 
-test("department layout separates deterministic affiliation clusters", () => {
+test("department grid separates deterministic affiliation clusters", () => {
   const graph = core.parseGraph(fixture());
   const filtered = core.filterGraph(graph, core.defaultState(graph));
-  const first = core.departmentLayout(filtered, graph);
-  const second = core.departmentLayout(filtered, graph);
+  const first = core.departmentGridLayout(filtered, graph);
+  const second = core.departmentGridLayout(filtered, graph);
 
   assert.deepEqual(first, second);
   assert.deepEqual([...first.keys()].sort(), ["a", "b", "c"]);
@@ -428,17 +435,50 @@ test("department layout separates deterministic affiliation clusters", () => {
   const distance = (left, right) =>
     Math.hypot(first.get(left).x - first.get(right).x, first.get(left).y - first.get(right).y);
   assert.ok(distance("a", "b") < distance("b", "c"));
-  assert.deepEqual(core.departmentLayout({ nodes: [] }, graph), new Map());
+  assert.deepEqual(core.departmentGridLayout({ nodes: [] }, graph), new Map());
 
   const oneDepartment = core.filterGraph(graph, {
     ...core.defaultState(graph),
     departments: ["one"],
   });
-  const centered = core.departmentLayout(oneDepartment, graph);
+  const centered = core.departmentGridLayout(oneDepartment, graph);
   const centerX = [...centered.values()].reduce((sum, point) => sum + point.x, 0) / centered.size;
   const centerY = [...centered.values()].reduce((sum, point) => sum + point.y, 0) / centered.size;
   assert.ok(Math.abs(centerX) < 1e-9);
   assert.ok(Math.abs(centerY) < 1e-9);
+});
+
+test("department force layout is deterministic, organic, and tunably separated", () => {
+  const graph = core.parseGraph(fixture());
+  const filtered = core.filterGraph(graph, core.defaultState(graph));
+  const balanced = core.departmentForceLayout(filtered, graph, 3);
+  const repeated = core.departmentForceLayout(filtered, graph, 3);
+  const close = core.departmentForceLayout(filtered, graph, 1);
+  const far = core.departmentForceLayout(filtered, graph, 5);
+
+  assert.deepEqual(balanced, repeated);
+  assert.deepEqual([...balanced.keys()].sort(), ["a", "b", "c"]);
+  for (const position of balanced.values()) {
+    assert.equal(Number.isFinite(position.x), true);
+    assert.equal(Number.isFinite(position.y), true);
+  }
+  const departmentDistance = (positions) => {
+    const one = {
+      x: (positions.get("a").x + positions.get("b").x) / 2,
+      y: (positions.get("a").y + positions.get("b").y) / 2,
+    };
+    return Math.hypot(one.x - positions.get("c").x, one.y - positions.get("c").y);
+  };
+  assert.ok(departmentDistance(far) > departmentDistance(close));
+  assert.deepEqual(core.departmentForceLayout(filtered, graph, 99), far);
+  assert.deepEqual(core.departmentForceLayout({ nodes: [] }, graph), new Map());
+  assert.deepEqual(
+    core.departmentForceLayout(
+      { nodes: [{ id: "solo" }] },
+      graph,
+    ),
+    new Map([["solo", { x: 0, y: 0 }]]),
+  );
 });
 
 test("collaboration layout removes a simple pair of crossing connections", () => {

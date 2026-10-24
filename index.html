@@ -222,12 +222,34 @@
                 <span>Collaboration</span>
               </label>
               <label>
+                <input type="radio" name="graph-layout" value="department-force" />
+                <span>Dept. force</span>
+              </label>
+              <label>
                 <input type="radio" name="graph-layout" value="departments" />
-                <span>Departments</span>
+                <span>Dept. grid</span>
               </label>
             </div>
+            <div id="department-spacing-control" class="layout-tuning" hidden>
+              <label for="department-spacing">
+                <span>Cross-department distance</span>
+                <output id="department-spacing-output" for="department-spacing">Balanced</output>
+              </label>
+              <input
+                id="department-spacing"
+                type="range"
+                min="1"
+                max="5"
+                step="1"
+                value="3"
+              />
+              <div class="range-labels" aria-hidden="true">
+                <span>Closer</span>
+                <span>Farther</span>
+              </div>
+            </div>
             <p class="field-note">
-              Separate affiliations so cross-department links span the open center.
+              Department force is organic; department grid keeps aligned groups.
             </p>
           </fieldset>
 
