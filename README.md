@@ -20,7 +20,9 @@ publications behind every displayed connection.
 The default layout emphasizes the overall collaboration structure. Two
 shareable department views make links between groups easier to trace: an
 organic force layout with tunable cross-department distance, and a compact grid
-that keeps affiliation clusters aligned.
+that keeps affiliation clusters aligned. With department filters active,
+faculty admitted through a secondary appointment join a selected affiliation's
+layout cluster while retaining their primary-affiliation color.
 
 ## What this graph does—and does not—show
 

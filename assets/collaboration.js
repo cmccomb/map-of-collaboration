@@ -409,9 +409,14 @@
     const selection = core.subgraphForSelection(state.filtered, selectedIds);
     const positions =
       state.view.layout === "department-force"
-        ? core.departmentForceLayout(selection, state.graph, state.view.departmentSpacing)
+        ? core.departmentForceLayout(
+            selection,
+            state.graph,
+            state.view.departmentSpacing,
+            state.view.departments,
+          )
         : state.view.layout === "departments"
-          ? core.departmentGridLayout(selection, state.graph)
+          ? core.departmentGridLayout(selection, state.graph, state.view.departments)
           : core.selectionLayout(state.filtered, selectedIds);
     fitNodes(selection.nodes, {
       maximumScale: selection.edges.length ? 560 : 420,
@@ -451,9 +456,14 @@
     else {
       const positions =
         state.view.layout === "department-force"
-          ? core.departmentForceLayout(state.filtered, state.graph, state.view.departmentSpacing)
+          ? core.departmentForceLayout(
+              state.filtered,
+              state.graph,
+              state.view.departmentSpacing,
+              state.view.departments,
+            )
           : state.view.layout === "departments"
-            ? core.departmentGridLayout(state.filtered, state.graph)
+            ? core.departmentGridLayout(state.filtered, state.graph, state.view.departments)
             : spreadOverviewLayout(core.collaborationLayout(state.filtered));
       fitNodes(state.filtered?.nodes || [], {
         positions,
@@ -658,8 +668,9 @@
   function drawDepartmentLabels(occupied, now, transform) {
     const groups = new Map();
     for (const node of state.filtered.nodes) {
-      if (!groups.has(node.primary_department)) groups.set(node.primary_department, []);
-      groups.get(node.primary_department).push(node);
+      const departmentId = core.layoutDepartmentId(node, state.view.departments);
+      if (!groups.has(departmentId)) groups.set(departmentId, []);
+      groups.get(departmentId).push(node);
     }
     const viewport = effectiveViewport();
     const origin = { x: transform.x, y: transform.y };

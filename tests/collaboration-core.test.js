@@ -470,6 +470,37 @@ test("department grid separates deterministic affiliation clusters", () => {
   assert.ok(Math.abs(centerY) < 1e-9);
 });
 
+test("department layouts fold secondary matches into a selected affiliation", () => {
+  const value = fixture();
+  value.nodes[2].departments = ["two", "one"];
+  const graph = core.parseGraph(value);
+  const filtered = core.filterGraph(graph, {
+    ...core.defaultState(graph),
+    departments: ["one"],
+  });
+  const secondary = graph.nodeById.get("c");
+
+  assert.equal(core.layoutDepartmentId(secondary), "two");
+  assert.equal(core.layoutDepartmentId(secondary, ["missing"]), "two");
+  assert.equal(core.layoutDepartmentId(secondary, ["one"]), "one");
+  assert.equal(core.layoutDepartmentId(secondary, ["one", "two"]), "two");
+
+  const distanceFromPrimaryCluster = (positions) => {
+    const center = {
+      x: (positions.get("a").x + positions.get("b").x) / 2,
+      y: (positions.get("a").y + positions.get("b").y) / 2,
+    };
+    return Math.hypot(positions.get("c").x - center.x, positions.get("c").y - center.y);
+  };
+  const separatedGrid = core.departmentGridLayout(filtered, graph);
+  const foldedGrid = core.departmentGridLayout(filtered, graph, ["one"]);
+  const separatedForce = core.departmentForceLayout(filtered, graph, 3);
+  const foldedForce = core.departmentForceLayout(filtered, graph, 3, ["one"]);
+
+  assert.ok(distanceFromPrimaryCluster(foldedGrid) < distanceFromPrimaryCluster(separatedGrid));
+  assert.ok(distanceFromPrimaryCluster(foldedForce) < distanceFromPrimaryCluster(separatedForce));
+});
+
 test("department force layout is deterministic, organic, and tunably separated", () => {
   const graph = core.parseGraph(fixture());
   const filtered = core.filterGraph(graph, core.defaultState(graph));
