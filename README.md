@@ -2,7 +2,7 @@
 
 [![Deploy collaboration graph](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml/badge.svg)](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml)
 [![Live site](https://img.shields.io/website?url=https%3A%2F%2Fcmccomb.github.io%2Fmap-of-collaboration%2F&label=live%20site)](https://cmccomb.github.io/map-of-collaboration/)
-[![Line coverage: 98.57%](https://img.shields.io/badge/line%20coverage-98.57%25-brightgreen)](#checks)
+[![Line coverage: 98.62%](https://img.shields.io/badge/line%20coverage-98.62%25-brightgreen)](#checks)
 [![License: MIT](https://img.shields.io/github/license/cmccomb/map-of-collaboration)](LICENSE)
 
 An interactive coauthorship graph built from the canonical
@@ -20,9 +20,12 @@ publications behind every displayed connection.
 The default layout emphasizes the overall collaboration structure. Two
 shareable department views make links between groups easier to trace: an
 organic force layout with tunable cross-department and cross-school/college distance,
-and a compact grid that keeps affiliation clusters aligned. With department filters active,
-faculty admitted through a secondary appointment join a selected affiliation's
-layout cluster. A selected school also determines their node color.
+and a compact grid that keeps affiliation clusters aligned. The source registry's
+reviewed or inferred primary department sets each faculty node's color and
+default layout group. With a department or school filter active, faculty admitted
+through a secondary appointment join that selected group's layout cluster but
+retain their primary-department color. People without a supported primary remain
+neutral and have their own unresolved layout group.
 
 A school selection limits CMU faculty and collaborations to the selected schools
 in every layout. Department controls and the color key show those schools'
@@ -75,8 +78,8 @@ npm run check
 npm test
 ```
 
-The current 39-test suite reports **98.57% line coverage**, **91.22% branch
-coverage**, and **98.24% function coverage** across the instrumented graph
+The current 43-test suite reports **98.62% line coverage**, **92.55% branch
+coverage**, and **98.71% function coverage** across the instrumented graph
 logic and site-build pipeline. The test command enforces a 90% minimum for all
 three measures.
 
@@ -102,6 +105,15 @@ artifact: `catalogs.schools` with `school_id`, `title`, and `directory_url`;
 `points[].school_ids` may be present for provenance. CMU faculty coauthorship
 still comes only from shared `points[].faculty_ids`. Existing Engineering-only
 artifacts without school fields resolve to one `engineering` school.
+
+The builder reads `catalogs.faculty[].primary_department_id` from the canonical
+publication artifact. A blank value stays unresolved, even if a person has a
+single included campus membership. For older artifacts without that field, the
+builder derives a primary only when there is exactly one academic department;
+multiple memberships and the Silicon Valley campus alone remain unresolved.
+All included memberships continue to drive search, department filters, and
+cross-department edge classification. The source registry's basis and evidence
+URL appear in the faculty detail panel when available.
 
 `?schools=scs` shows a CMU faculty edge only when **both** endpoints belong to
 SCS, in every layout. The optional historical coauthor can appear through a

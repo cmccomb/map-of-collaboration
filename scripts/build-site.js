@@ -332,6 +332,19 @@ function deriveGraph(artifact, config, revision) {
       ),
     ];
     assert(personDepartments.length > 0, `Faculty ${id} has no included department`);
+    // Older source artifacts have no primary field. Only a sole academic unit is
+    // unambiguous in those artifacts; an explicit blank in a newer artifact is
+    // an editorial decision and must stay blank.
+    const hasPrimary = Object.hasOwn(person, "primary_department_id");
+    const primaryDepartment = hasPrimary
+      ? String(person.primary_department_id || "").trim()
+      : personDepartments.length === 1 && personDepartments[0] !== "cmu-silicon-valley"
+        ? personDepartments[0]
+        : "";
+    assert(!primaryDepartment || personDepartments.includes(primaryDepartment),
+      `Faculty ${id} has a primary department outside their memberships`);
+    assert(primaryDepartment !== "cmu-silicon-valley",
+      `Faculty ${id} has a campus as primary department`);
     personDepartments.forEach((departmentId) => {
       departmentById.get(departmentId).faculty_count += 1;
     });
@@ -349,9 +362,17 @@ function deriveGraph(artifact, config, revision) {
       id,
       name: String(person.display_name || id),
       departments: personDepartments,
-      primary_department: personDepartments[0],
+      primary_department: primaryDepartment,
+      primary_department_basis: primaryDepartment
+        ? String(person.primary_department_basis || (hasPrimary ? "" : "single_included_membership"))
+        : "",
+      primary_department_source_url: primaryDepartment
+        ? safeSourceUrl({ source_url: person.primary_department_source_url })
+        : "",
       school_ids: personSchools,
-      primary_school: personSchools[0],
+      primary_school: primaryDepartment
+        ? departmentById.get(primaryDepartment).school_id
+        : personSchools.length === 1 ? personSchools[0] : "",
       roles: [...new Set(memberships.map((membership) => String(membership.role || "faculty")))],
       publication_count: Math.max(0, Number(person.publication_count) || 0),
       mapped_publication_count: 0,

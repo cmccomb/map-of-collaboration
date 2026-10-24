@@ -513,7 +513,7 @@ test("parseGraph applies safe defaults to optional graph metadata", () => {
   value.nodes[0] = {
     ...value.nodes[0],
     name: "",
-    primary_department: "missing",
+    primary_department: "",
     roles: null,
     publication_count: "invalid",
     mapped_publication_count: -1,
@@ -543,12 +543,33 @@ test("parseGraph applies safe defaults to optional graph metadata", () => {
   assert.equal(graph.departmentById.get("one").short_title, "one");
   assert.equal(graph.departmentById.get("one").directory_url, "");
   assert.equal(graph.nodeById.get("a").name, "a");
-  assert.equal(graph.nodeById.get("a").primary_department, "one");
+  assert.equal(graph.nodeById.get("a").primary_department, "");
   assert.deepEqual(graph.nodeById.get("a").roles, []);
   assert.equal(graph.nodeById.get("a").mapped_publication_count, 0);
   assert.equal(graph.edgeById.get("a|b").works[0].title, "Untitled work");
   assert.equal(graph.edgeById.get("a|b").works[0].year, null);
   assert.equal(graph.edgeById.get("a|b").works[0].citations, 0);
+});
+
+test("parseGraph keeps unresolved primaries and rejects invented or mismatched ones", () => {
+  const value = schoolGridFixture();
+  const joint = value.nodes.find((node) => node.id === "e");
+  joint.primary_department = "";
+  joint.primary_school = "";
+  const graph = core.parseGraph(value);
+  const unresolved = graph.nodeById.get("e");
+  assert.equal(unresolved.primary_department, "");
+  assert.equal(unresolved.primary_school, "");
+  assert.deepEqual(unresolved.departments, ["one", "two"]);
+  assert.equal(core.layoutDepartmentId(unresolved), "__primary_unresolved__");
+  assert.equal(core.layoutDepartmentId(unresolved, ["two"], graph, ["scs"]),
+    "__primary_unresolved__");
+  assert.equal(core.facultyLabelEligible(unresolved, ["one"]), false);
+  assert.equal(core.filterGraph(graph, {
+    ...core.defaultState(graph), departments: ["two"], showUnconnected: true,
+  }).nodes.some((node) => node.id === "e"), true);
+  joint.primary_department = "missing";
+  assert.throws(() => core.parseGraph(value), /primary department outside their memberships/);
 });
 
 test("filterGraph applies time, strength, and cross-department rules", () => {
@@ -675,8 +696,9 @@ test("automatic labels keep department limits while admitting external coauthors
   );
   assert.equal(
     core.facultyLabelEligible({ departments: ["one", "two"], primary_department: "one" }),
-    false,
+    true,
   );
+  assert.equal(core.facultyLabelEligible({ departments: ["one", "two"], primary_department: "" }), false);
   assert.equal(
     core.facultyLabelEligible(
       { departments: ["one", "two"], primary_department: "one" },
@@ -904,7 +926,8 @@ test("whole-CMU force view forms Engineering, MCS, and separate SCS departments"
   );
   value.nodes.find((node) => node.id === "e").departments = ["one", "s3d"];
   value.nodes.push(
-    { ...value.nodes.find((node) => node.id === "e"), id: "f", name: "S3D colleague" },
+    { ...value.nodes.find((node) => node.id === "e"), id: "f", name: "S3D colleague",
+      primary_department: "s3d", primary_school: "scs" },
     { ...value.nodes.find((node) => node.id === "c"), id: "g", name: "MCS one",
       departments: ["math"], primary_department: "math", school_ids: ["mcs"] },
     { ...value.nodes.find((node) => node.id === "c"), id: "h", name: "MCS two",
@@ -920,7 +943,7 @@ test("whole-CMU force view forms Engineering, MCS, and separate SCS departments"
   const graph = core.parseGraph(value);
   const filtered = core.filterGraph(graph, core.defaultState(graph));
   const assigned = core.forceDepartmentAssignments(filtered, graph, 10);
-  assert.equal(assigned.get("e"), "s3d");
+  assert.equal(assigned.get("e"), "one");
   assert.equal(assigned.get("f"), "s3d");
   assert.equal(assigned.get("c"), "two");
   assert.equal(assigned.get("g"), "math");
@@ -931,11 +954,11 @@ test("whole-CMU force view forms Engineering, MCS, and separate SCS departments"
     y: ids.reduce((sum, id) => sum + positions.get(id).y, 0) / ids.length,
   });
   const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
-  const engineering = center(["a", "b"]);
-  const scs = center(["c", "d", "e", "f"]);
+  const engineering = center(["a", "b", "e"]);
+  const scs = center(["c", "d", "f"]);
   const mcs = center(["g", "h"]);
   const csd = center(["c", "d"]);
-  const s3d = center(["e", "f"]);
+  const s3d = center(["f"]);
   assert.ok(distance(engineering, scs) > 8);
   assert.ok(distance(engineering, mcs) > 8);
   assert.ok(distance(scs, mcs) > 8);

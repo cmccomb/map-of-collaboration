@@ -141,10 +141,9 @@
   function nodeColor(node) {
     return node?.kind === "external_coauthor"
       ? css("--warm")
-      : departmentColor(state.layoutDepartments.get(node.id)
-        || (state.view?.schools?.length
-          ? core.layoutDepartmentId(node, state.view.departments, state.graph, state.view.schools)
-          : node?.primary_department));
+      : node?.primary_department
+        ? departmentColor(node.primary_department)
+        : css("--primary-unresolved");
   }
 
   function nodeAffiliation(node) {
@@ -271,6 +270,10 @@
 
   function renderDepartmentControls() {
     const schoolFocused = core.hasSchoolFocus(state.view);
+    const scopedFaculty = state.graph.nodes.filter((node) =>
+      node.kind !== "external_coauthor" &&
+      (!schoolFocused || core.schoolEligible(state.graph, node, state.view.schools)));
+    const primaryIds = new Set(scopedFaculty.map((node) => node.primary_department));
     elements.departmentOptions.replaceChildren();
     elements.departmentLegend.replaceChildren();
     updateLegendAffiliation();
@@ -289,6 +292,7 @@
       label.append(input, content);
       elements.departmentOptions.append(label);
 
+      if (!primaryIds.has(department.department_id)) continue;
       const legendButton = element("button");
       legendButton.type = "button";
       legendButton.dataset.departmentId = department.department_id;
@@ -299,14 +303,26 @@
       legendButton.append(legendDot, element("span", "", department.short_title));
       elements.departmentLegend.append(legendButton);
     }
+    for (const department of state.graph.departments) {
+      if (!schoolFocused || state.view.schools.includes(department.school_id)
+        || !primaryIds.has(department.department_id)) continue;
+      const key = element("div", "affiliation-legend");
+      const dot = element("span", "legend-dot");
+      dot.style.setProperty("--dot", departmentColor(department.department_id));
+      key.append(dot, element("span", "", `${department.short_title} · other school primary`));
+      elements.departmentLegend.append(key);
+    }
+    if (scopedFaculty.some((node) => !node.primary_department)) {
+      const key = element("div", "affiliation-legend");
+      const dot = element("span", "legend-dot");
+      dot.style.setProperty("--dot", css("--primary-unresolved"));
+      key.append(dot, element("span", "", "Primary unresolved"));
+      elements.departmentLegend.append(key);
+    }
   }
 
   function updateLegendAffiliation() {
-    document.querySelector(".legend-heading p").textContent = core.hasSchoolFocus(state.view)
-      ? "Selected school or college"
-      : state.view?.layout === "department-force" && state.view.schoolSpacing > 0
-        ? "Layout affiliation"
-        : "Primary affiliation";
+    document.querySelector(".legend-heading p").textContent = "Primary display department";
   }
 
   function renderExternalLegend() {
@@ -874,9 +890,14 @@
     const origin = { x: transform.x, y: transform.y };
     context.font = "700 11px Inter, ui-sans-serif, system-ui, sans-serif";
 
-    for (const department of state.graph.departments) {
-      if (schoolFocused && !state.view.schools.includes(department.school_id)) continue;
-      if (!core.departmentLabelEligible(department.department_id, state.view.departments)) {
+    const layoutGroups = [
+      ...state.graph.departments,
+      { department_id: core.UNRESOLVED_LAYOUT_GROUP, short_title: "Primary unresolved" },
+    ];
+    for (const department of layoutGroups) {
+      const unresolved = department.department_id === core.UNRESOLVED_LAYOUT_GROUP;
+      if (!unresolved && schoolFocused && !state.view.schools.includes(department.school_id)) continue;
+      if (!unresolved && !core.departmentLabelEligible(department.department_id, state.view.departments)) {
         continue;
       }
       const nodes = groups.get(department.department_id);
@@ -927,7 +948,8 @@
       context.fillStyle = css("--tooltip");
       roundedRect(context, rect.x, rect.y, rect.width, rect.height, 999);
       context.fill();
-      context.strokeStyle = departmentColor(department.department_id);
+      context.strokeStyle = unresolved
+        ? css("--primary-unresolved") : departmentColor(department.department_id);
       context.lineWidth = 1.4;
       context.stroke();
       context.globalAlpha = 1;
@@ -1162,6 +1184,30 @@
       departmentList.append(chip);
     }
     header.append(departmentList);
+    if (node.kind !== "external_coauthor") {
+      const primary = element("p", "detail-primary");
+      if (node.primary_department) {
+        const title = state.graph.departmentById.get(node.primary_department)?.title
+          || node.primary_department;
+        const basis = {
+          inferred_advisee_count: "inferred from PhD advisees",
+          inferred_profile_title: "inferred from faculty title",
+          reviewed: "reviewed",
+          single_included_membership: "sole included academic unit",
+        }[node.primary_department_basis] || "display choice";
+        primary.append(document.createTextNode(`Primary display department: ${title} (${basis})`));
+        if (node.primary_department_source_url) {
+          const source = element("a", "", "Evidence ↗");
+          source.href = node.primary_department_source_url;
+          source.target = "_blank";
+          source.rel = "noopener noreferrer";
+          primary.append(document.createTextNode(" · "), source);
+        }
+      } else {
+        primary.textContent = "Primary display department unresolved";
+      }
+      header.append(primary);
+    }
     const links = element("div", "detail-links");
     for (const [label, url] of [
       [node.kind === "external_coauthor" ? "Coauthor source ↗" : "Homepage ↗", node.homepage_url],

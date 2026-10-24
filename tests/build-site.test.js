@@ -157,6 +157,7 @@ test("deriveGraph keeps cross-school coauthorship and cross-appointed faculty di
   artifact.catalogs.faculty[0].school_ids = ["engineering"];
   artifact.catalogs.faculty[1].school_ids = ["engineering", "scs"];
   artifact.catalogs.faculty[1].memberships.push({ department_id: "csd", role: "faculty" });
+  artifact.catalogs.faculty[1].primary_department_id = "csd";
   artifact.catalogs.faculty[2].school_ids = ["scs"];
   artifact.catalogs.faculty[2].memberships = [{ department_id: "csd", role: "faculty" }];
   artifact.points[0].school_ids = ["engineering", "scs"];
@@ -170,9 +171,62 @@ test("deriveGraph keeps cross-school coauthorship and cross-appointed faculty di
   assert.equal(edges.get("a|c").cross_school, true);
   assert.equal(graph.counts.cross_school_edge_count, 1);
   assert.deepEqual(graph.nodes.find((node) => node.id === "b").school_ids, ["engineering", "scs"]);
+  assert.equal(graph.nodes.find((node) => node.id === "b").primary_department, "csd");
+  assert.equal(graph.nodes.find((node) => node.id === "b").primary_school, "scs");
   assert.equal(graph.departments.find((department) => department.department_id === "csd").school_id, "scs");
   assert.equal(graph.departments.find((department) => department.department_id === "csd").short_title, "CSD");
   assert.equal(graph.schools.find((school) => school.school_id === "scs").faculty_count, 2);
+});
+
+test("deriveGraph carries source-backed primaries without inventing unresolved ones", () => {
+  const artifact = schoolArtifactFixture();
+  artifact.catalogs.faculty[0].memberships = [
+    { department_id: "ece", role: "faculty" },
+    { department_id: "mech", role: "faculty" },
+  ];
+  artifact.catalogs.faculty[0].primary_department_id = "mech";
+  artifact.catalogs.faculty[0].primary_department_basis = "inferred_advisee_count";
+  artifact.catalogs.faculty[0].primary_department_source_url = "https://example.com/advisees";
+  artifact.catalogs.faculty[1].primary_department_id = "";
+  artifact.catalogs.faculty[2].memberships.push({ department_id: "ece", role: "faculty" });
+
+  const graph = build.deriveGraph(artifact, config, "a".repeat(40));
+  const ada = graph.nodes.find((node) => node.id === "a");
+  assert.deepEqual(ada.departments, ["ece", "mech"]);
+  assert.equal(ada.primary_department, "mech");
+  assert.equal(ada.primary_department_basis, "inferred_advisee_count");
+  assert.equal(ada.primary_department_source_url, "https://example.com/advisees");
+  assert.equal(graph.nodes.find((node) => node.id === "b").primary_department, "");
+  assert.equal(graph.nodes.find((node) => node.id === "c").primary_department, "");
+  assert.equal(graph.departments.find((item) => item.department_id === "ece").faculty_count, 3);
+
+  artifact.catalogs.faculty[0].primary_department_id = "missing";
+  assert.throws(() => build.deriveGraph(artifact, config, "a".repeat(40)),
+    /primary department outside their memberships/);
+});
+
+test("legacy campus-only affiliation stays unresolved while CMU-Africa is eligible", () => {
+  const artifact = schoolArtifactFixture();
+  artifact.catalogs.departments.push(
+    { department_id: "cmu-silicon-valley", school_id: "engineering", title: "CMU Silicon Valley" },
+    { department_id: "cmu-africa", school_id: "engineering", title: "CMU-Africa" },
+  );
+  artifact.catalogs.faculty[2].memberships = [
+    { department_id: "cmu-silicon-valley", role: "teaching" },
+  ];
+  let graph = build.deriveGraph(artifact, config, "a".repeat(40));
+  assert.equal(graph.nodes.find((node) => node.id === "c").primary_department, "");
+  artifact.catalogs.faculty[2].memberships = [
+    { department_id: "cmu-africa", role: "teaching" },
+  ];
+  graph = build.deriveGraph(artifact, config, "a".repeat(40));
+  assert.equal(graph.nodes.find((node) => node.id === "c").primary_department, "cmu-africa");
+  artifact.catalogs.faculty[2].primary_department_id = "cmu-silicon-valley";
+  artifact.catalogs.faculty[2].memberships.push(
+    { department_id: "cmu-silicon-valley", role: "teaching" },
+  );
+  assert.throws(() => build.deriveGraph(artifact, config, "a".repeat(40)),
+    /campus as primary department/);
 });
 
 test("deriveGraph adds only verified external coauthor edges without changing CMU faculty counts", () => {

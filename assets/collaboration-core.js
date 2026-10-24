@@ -8,6 +8,7 @@
   const GRAPH_SCHEMA_VERSION = 1;
   const SAFE_PROTOCOLS = new Set(["https:", "http:"]);
   const EXTERNAL_LAYOUT_GROUP = "__external_coauthors__";
+  const UNRESOLVED_LAYOUT_GROUP = "__primary_unresolved__";
 
   function assert(condition, message) {
     if (!condition) throw new Error(message);
@@ -118,23 +119,29 @@
       kind === "external_coauthor"
         ? `External coauthor ${id} must not have a CMU school`
         : `Faculty ${id} has invalid school memberships`);
+      const primaryDepartment = kind === "external_coauthor"
+        ? ""
+        : String(node.primary_department || "").trim();
+      assert(!primaryDepartment || departmentsForNode.includes(primaryDepartment),
+        `Faculty ${id} has a primary department outside their memberships`);
+      const primarySchool = primaryDepartment
+        ? departments.find((department) => department.department_id === primaryDepartment).school_id
+        : schoolsForNode.length === 1 ? schoolsForNode[0] : "";
+      assert(!primarySchool || schoolsForNode.includes(primarySchool),
+        `Faculty ${id} has a primary school outside their memberships`);
       assert(Number.isFinite(node.x) && Number.isFinite(node.y), `Faculty ${id} has no position`);
       return {
         id,
         kind,
         name: String(node.name || id),
         departments: departmentsForNode,
-        primary_department: kind === "external_coauthor"
-          ? ""
-          : departmentIds.has(node.primary_department)
-            ? node.primary_department
-            : departmentsForNode[0],
+        primary_department: primaryDepartment,
+        primary_department_basis: primaryDepartment
+          ? String(node.primary_department_basis || "") : "",
+        primary_department_source_url: primaryDepartment
+          ? safeExternalUrl(node.primary_department_source_url) : "",
         school_ids: schoolsForNode,
-        primary_school: kind === "external_coauthor"
-          ? ""
-          : schoolIds.has(node.primary_school)
-            ? node.primary_school
-            : schoolsForNode[0],
+        primary_school: primarySchool,
         roles: uniqueStrings(node.roles),
         publication_count: Math.max(0, integer(node.publication_count)),
         mapped_publication_count: Math.max(0, integer(node.mapped_publication_count)),
@@ -256,7 +263,8 @@
   }
 
   function layoutGroup(node) {
-    return node.kind === "external_coauthor" ? EXTERNAL_LAYOUT_GROUP : node.primary_department;
+    return node.kind === "external_coauthor" ? EXTERNAL_LAYOUT_GROUP
+      : node.primary_department || UNRESOLVED_LAYOUT_GROUP;
   }
 
   function hasSchoolFocus(state) {
@@ -523,8 +531,8 @@
     if (node?.kind === "external_coauthor") return true;
     const departments = uniqueStrings(node?.departments);
     const selectedDepartments = new Set(uniqueStrings(selectedDepartmentIds));
-    if (!selectedDepartments.size) return departments.length === 1;
-    const primaryDepartment = String(node?.primary_department || departments[0] || "").trim();
+    const primaryDepartment = String(node?.primary_department || "").trim();
+    if (!selectedDepartments.size) return Boolean(primaryDepartment);
     return selectedDepartments.has(primaryDepartment);
   }
 
@@ -538,13 +546,14 @@
 
   function layoutDepartmentId(node, selectedDepartmentIds = [], graph = null, selectedSchoolIds = []) {
     if (node?.kind === "external_coauthor") return layoutGroup(node);
+    if (!node?.primary_department) return UNRESOLVED_LAYOUT_GROUP;
     const departments = uniqueStrings(node?.departments);
     const selectedSchools = new Set(selectedSchoolIds);
     const inSelectedSchools = selectedSchools.size && graph
       ? departments.filter((id) => selectedSchools.has(graph.departmentById.get(id)?.school_id))
       : departments;
     const choices = inSelectedSchools.length ? inSelectedSchools : departments;
-    const primaryDepartment = String(node?.primary_department || departments[0] || "").trim();
+    const primaryDepartment = String(node.primary_department).trim();
     const selectedDepartments = new Set(uniqueStrings(selectedDepartmentIds));
     if (choices.includes(primaryDepartment)
       && (!selectedDepartments.size || selectedDepartments.has(primaryDepartment))) {
@@ -557,36 +566,12 @@
   }
 
   function forceDepartmentAssignments(
-    filtered, graph, schoolSpacing = 0, selectedDepartmentIds = [], selectedSchoolIds = [],
+    filtered, graph, _schoolSpacing = 0, selectedDepartmentIds = [], selectedSchoolIds = [],
   ) {
-    const exclusiveSchoolCounts = new Map(graph.schools.map((school) => [school.school_id, 0]));
-    for (const node of filtered.nodes) {
-      if (node.school_ids?.length === 1) {
-        const schoolId = node.school_ids[0];
-        exclusiveSchoolCounts.set(schoolId, (exclusiveSchoolCounts.get(schoolId) || 0) + 1);
-      }
-    }
-    return new Map(filtered.nodes.map((node) => {
-      // A joint appointment needs one display group in the whole-CMU view.
-      // Assign it to the school with fewer exclusive visible colleagues.
-      const primarySchool = graph.departmentById.get(node.primary_department)?.school_id || "";
-      const preferredSchool = !selectedDepartmentIds.length && !selectedSchoolIds.length
-        && schoolSpacing > 0 && node.school_ids?.length > 1
-        ? [...node.school_ids].sort((left, right) =>
-          (exclusiveSchoolCounts.get(left) || 0) - (exclusiveSchoolCounts.get(right) || 0)
-          || Number(left === primarySchool) - Number(right === primarySchool)
-          || left.localeCompare(right))[0]
-        : "";
-      return [
-        node.id,
-        layoutDepartmentId(
-          node,
-          selectedDepartmentIds,
-          graph,
-          preferredSchool ? [preferredSchool] : selectedSchoolIds,
-        ),
-      ];
-    }));
+    return new Map(filtered.nodes.map((node) => [
+      node.id,
+      layoutDepartmentId(node, selectedDepartmentIds, graph, selectedSchoolIds),
+    ]));
   }
 
   function connectionsForNode(filtered, nodeId) {
@@ -1192,6 +1177,7 @@
 
   return Object.freeze({
     GRAPH_SCHEMA_VERSION,
+    UNRESOLVED_LAYOUT_GROUP,
     collaborationLayout,
     connectionsForNode,
     defaultState,
