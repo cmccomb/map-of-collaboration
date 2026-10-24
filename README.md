@@ -1,5 +1,10 @@
 # CMU Engineering Collaborations
 
+[![Deploy collaboration graph](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml/badge.svg)](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml)
+[![Live site](https://img.shields.io/website?url=https%3A%2F%2Fcmccomb.github.io%2Fmap-of-collaboration%2F&label=live%20site)](https://cmccomb.github.io/map-of-collaboration/)
+[![Coverage threshold](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen)](#checks)
+[![License: MIT](https://img.shields.io/github/license/cmccomb/map-of-collaboration)](LICENSE)
+
 An interactive coauthorship graph built from the canonical
 [`ccm/cmu-engineering-publications`](https://huggingface.co/datasets/ccm/cmu-engineering-publications)
 artifact maintained by
