@@ -259,11 +259,11 @@
     return node.kind === "external_coauthor" ? EXTERNAL_LAYOUT_GROUP : node.primary_department;
   }
 
-  function hasSchoolGridFocus(state) {
-    return state.layout === "departments" && Boolean(state.schools?.length);
+  function hasSchoolFocus(state) {
+    return Boolean(state.schools?.length);
   }
 
-  function gridSchoolEligible(graph, node, selectedSchoolIds) {
+  function schoolEligible(graph, node, selectedSchoolIds) {
     const selectedSchools = new Set(selectedSchoolIds);
     if (node.kind !== "external_coauthor") {
       return node.school_ids.some((id) => selectedSchools.has(id));
@@ -276,14 +276,14 @@
   }
 
   function normalizeView(state, graph) {
-    if (!hasSchoolGridFocus(state)) return state;
+    if (!hasSchoolFocus(state)) return state;
     const selectedSchools = new Set(state.schools);
     return {
       ...state,
       departments: (state.departments || []).filter((id) =>
         selectedSchools.has(graph.departmentById.get(id)?.school_id)),
       selectedIds: validFacultyIds(state.selectedIds || [], graph).filter((id) =>
-        gridSchoolEligible(graph, graph.nodeById.get(id), selectedSchools)),
+        schoolEligible(graph, graph.nodeById.get(id), selectedSchools)),
     };
   }
 
@@ -388,7 +388,6 @@
     state = normalizeView(state, graph);
     const selectedDepartments = new Set(state.departments || []);
     const selectedSchools = new Set(state.schools || []);
-    const focusedGrid = hasSchoolGridFocus(state);
     const departmentCandidateIds = new Set(
       graph.nodes
         .filter((node) => nodeMatchesDepartments(node, selectedDepartments))
@@ -420,11 +419,9 @@
       if (selectedSchools.size) {
         const sourceMatches = schoolCandidateIds.has(edge.source);
         const targetMatches = schoolCandidateIds.has(edge.target);
-        if (focusedGrid) {
-          const external = graph.nodeById.get(edge.source).kind === "external_coauthor"
-            || graph.nodeById.get(edge.target).kind === "external_coauthor";
-          if (external ? !sourceMatches && !targetMatches : !sourceMatches || !targetMatches) continue;
-        } else if (!sourceMatches && !targetMatches) continue;
+        const external = graph.nodeById.get(edge.source).kind === "external_coauthor"
+          || graph.nodeById.get(edge.target).kind === "external_coauthor";
+        if (external ? !sourceMatches && !targetMatches : !sourceMatches || !targetMatches) continue;
       }
       if (state.crossDepartment && !edge.cross_department) continue;
       if (state.crossSchool && !edge.cross_school) continue;
@@ -462,7 +459,7 @@
     }
     validFacultyIds(state.selectedIds || [], graph).forEach((id) => {
       const node = graph.nodeById.get(id);
-      if (focusedGrid && node.kind === "external_coauthor" && !visibleIds.has(id)) return;
+      if (hasSchoolFocus(state) && node.kind === "external_coauthor" && !visibleIds.has(id)) return;
       if (state.showExternal || node.kind !== "external_coauthor") visibleIds.add(id);
     });
 
@@ -968,6 +965,7 @@
     requestedSpacing = 3,
     selectedDepartmentIds = [],
     requestedSchoolSpacing = 0,
+    selectedSchoolIds = [],
   ) {
     if (!filtered?.nodes?.length) return new Map();
     if (filtered.nodes.length === 1) {
@@ -978,9 +976,11 @@
     const schoolSpacingLevel = clamp(integer(requestedSchoolSpacing, 0), 0, 10);
     const openness = departmentSeparation(spacingLevel);
     const departmentByNode = new Map(
-      filtered.nodes.map((node) => [node.id, layoutDepartmentId(node, selectedDepartmentIds)]),
+      filtered.nodes.map((node) => [
+        node.id, layoutDepartmentId(node, selectedDepartmentIds, graph, selectedSchoolIds),
+      ]),
     );
-    const gridSeed = departmentGridLayout(filtered, graph, selectedDepartmentIds);
+    const gridSeed = departmentGridLayout(filtered, graph, selectedDepartmentIds, selectedSchoolIds);
     const nodesByDepartment = new Map();
     for (const node of filtered.nodes) {
       const departmentId = departmentByNode.get(node.id);
@@ -1148,8 +1148,8 @@
     facultyLabelEligible,
     facultyMatches,
     filterGraph,
-    gridSchoolEligible,
-    hasSchoolGridFocus,
+    schoolEligible,
+    hasSchoolFocus,
     layoutDepartmentId,
     normalizeView,
     parseGraph,

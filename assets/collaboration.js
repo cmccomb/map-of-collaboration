@@ -140,7 +140,9 @@
   function nodeColor(node) {
     return node?.kind === "external_coauthor"
       ? css("--warm")
-      : departmentColor(node?.primary_department);
+      : departmentColor(state.view?.schools?.length
+          ? core.layoutDepartmentId(node, state.view.departments, state.graph, state.view.schools)
+          : node?.primary_department);
   }
 
   function nodeAffiliation(node) {
@@ -227,7 +229,7 @@
       }
       renderControls();
       syncControls();
-      applyView({ fit: true, updateUrl: core.hasSchoolGridFocus(state.view) });
+      applyView({ fit: true, updateUrl: core.hasSchoolFocus(state.view) });
       const counts = state.graph.counts;
       elements.status.textContent = `${plural(counts.faculty_count, "faculty member")}${
         counts.external_coauthor_count
@@ -266,11 +268,14 @@
   }
 
   function renderDepartmentControls() {
-    const focusedGrid = core.hasSchoolGridFocus(state.view);
+    const schoolFocused = core.hasSchoolFocus(state.view);
     elements.departmentOptions.replaceChildren();
     elements.departmentLegend.replaceChildren();
+    document.querySelector(".legend-heading p").textContent = schoolFocused
+      ? "Selected-school affiliation"
+      : "Primary affiliation";
     for (const department of state.graph.departments) {
-      if (focusedGrid && !state.view.schools.includes(department.school_id)) continue;
+      if (schoolFocused && !state.view.schools.includes(department.school_id)) continue;
       const label = element("label", "department-option");
       const input = element("input");
       input.type = "checkbox";
@@ -309,14 +314,14 @@
   }
 
   function renderScopeCopy() {
-    const focusedGrid = core.hasSchoolGridFocus(state.view);
-    elements.facultySearchNote.textContent = focusedGrid
+    const schoolFocused = core.hasSchoolFocus(state.view);
+    elements.facultySearchNote.textContent = schoolFocused
       ? "Search selected-school faculty and linked historical coauthors, including people without mapped works. Connected faculty appear by default."
       : `Search all ${plural(
           state.graph.counts.faculty_count,
           "cataloged faculty member",
         )} across ${plural(state.graph.departments.length, "department or program", "departments and programs")}, including people without mapped works. Connected faculty appear on the graph by default.`;
-    document.querySelector("#canvas-instructions").textContent = focusedGrid
+    document.querySelector("#canvas-instructions").textContent = schoolFocused
       ? "Drag to pan, use the mouse wheel or zoom buttons to zoom, and select nodes to inspect shared works. Search selected-school faculty and linked historical coauthors."
       : "Drag to pan, use the mouse wheel or zoom buttons to zoom, and select nodes to compare observed collaborators. Select a node again to remove it. Search to reach every person.";
   }
@@ -397,7 +402,7 @@
   function applyView({ fit = false, updateUrl = true, animate = false } = {}) {
     state.view = core.normalizeView(state.view, state.graph);
     state.filtered = core.filterGraph(state.graph, state.view);
-    if (core.hasSchoolGridFocus(state.view)) {
+    if (core.hasSchoolFocus(state.view)) {
       state.view.selectedIds = state.view.selectedIds.filter((id) => state.filtered.nodeIds.has(id));
     }
     renderExternalLegend();
@@ -577,6 +582,7 @@
             state.view.departmentSpacing,
             state.view.departments,
             state.view.schoolSpacing,
+            state.view.schools,
           )
         : state.view.layout === "departments"
           ? core.departmentGridLayout(
@@ -627,6 +633,7 @@
               state.view.departmentSpacing,
               state.view.departments,
               state.view.schoolSpacing,
+              state.view.schools,
             )
           : state.view.layout === "departments"
             ? core.departmentGridLayout(
@@ -841,10 +848,10 @@
 
   function drawDepartmentLabels(occupied, now, transform) {
     const groups = new Map();
-    const focusedGrid = core.hasSchoolGridFocus(state.view);
+    const schoolFocused = core.hasSchoolFocus(state.view);
     for (const node of state.filtered.nodes) {
       const departmentId = core.layoutDepartmentId(
-        node, state.view.departments, state.graph, focusedGrid ? state.view.schools : [],
+        node, state.view.departments, state.graph, state.view.schools,
       );
       if (!groups.has(departmentId)) groups.set(departmentId, []);
       groups.get(departmentId).push(node);
@@ -854,7 +861,7 @@
     context.font = "700 11px Inter, ui-sans-serif, system-ui, sans-serif";
 
     for (const department of state.graph.departments) {
-      if (focusedGrid && !state.view.schools.includes(department.school_id)) continue;
+      if (schoolFocused && !state.view.schools.includes(department.school_id)) continue;
       if (!core.departmentLabelEligible(department.department_id, state.view.departments)) {
         continue;
       }
@@ -1325,7 +1332,7 @@
       .filter(Boolean);
     elements.selectedFaculty.replaceChildren();
     elements.selectedFaculty.hidden = selectedNodes.length === 0;
-    const searchScope = core.hasSchoolGridFocus(state.view)
+    const searchScope = core.hasSchoolFocus(state.view)
       ? "school faculty and linked coauthors"
       : `${formatNumber(state.graph?.nodes.length)} ${hasExternalCoauthors() ? "people" : "faculty"}`;
     elements.facultySearch.placeholder = selectedNodes.length
@@ -1350,8 +1357,8 @@
       query,
       state.graph.nodes.length,
       state.view.selectedIds,
-    ).filter((node) => !core.hasSchoolGridFocus(state.view)
-      || core.gridSchoolEligible(state.graph, node, state.view.schools)).slice(0, 9);
+    ).filter((node) => !core.hasSchoolFocus(state.view)
+      || core.schoolEligible(state.graph, node, state.view.schools)).slice(0, 9);
     state.activeSuggestion = state.suggestionNodes.length ? 0 : -1;
     elements.facultySuggestions.replaceChildren();
     if (!query.trim()) {
@@ -1495,7 +1502,7 @@
       if (elements.facultySearch.value) renderSuggestions();
       applyView({
         fit: true,
-        updateUrl: core.hasSchoolGridFocus(state.view),
+        updateUrl: core.hasSchoolFocus(state.view),
         animate: true,
       });
     });

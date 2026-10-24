@@ -156,7 +156,7 @@ test("parseGraph validates and indexes the graph", () => {
   );
 });
 
-test("school filters preserve outward edges and legacy department links", () => {
+test("school filters keep both CMU endpoints in scope and preserve department links", () => {
   const graph = core.parseGraph(schoolFixture());
   assert.deepEqual(graph.schools.map((school) => school.school_id), ["engineering", "scs"]);
   assert.equal(graph.edgeById.get("b|c").cross_school, true);
@@ -173,10 +173,15 @@ test("school filters preserve outward edges and legacy department links", () => 
   assert.equal(core.stateFromSearch("?school_spacing=-5", graph).schoolSpacing, 0);
   assert.equal(core.stateFromSearch("", graph).schoolSpacing, 0);
   const scs = core.filterGraph(graph, state);
-  assert.deepEqual(scs.edges.map((edge) => edge.id), ["b|c"]);
-  assert.deepEqual(scs.nodes.map((node) => node.id).sort(), ["b", "c"]);
-  assert.match(core.edgesToCsv(graph, scs), /cross_department,cross_school/);
-  assert.match(core.edgesToCsv(graph, scs), /Bela Beta,Cora Gamma,1,,,yes,yes/);
+  assert.deepEqual(scs.edges, []);
+  assert.deepEqual(scs.nodes, []);
+  const bothSchools = core.filterGraph(graph, {
+    ...state,
+    schools: ["engineering", "scs"],
+  });
+  assert.deepEqual(bothSchools.edges.map((edge) => edge.id), ["b|c"]);
+  assert.match(core.edgesToCsv(graph, bothSchools), /cross_department,cross_school/);
+  assert.match(core.edgesToCsv(graph, bothSchools), /Bela Beta,Cora Gamma,1,,,yes,yes/);
   const department = core.filterGraph(graph, {
     ...core.defaultState(graph),
     departments: ["two"],
@@ -190,45 +195,65 @@ test("school filters preserve outward edges and legacy department links", () => 
   assert.deepEqual(unconnected.nodes.map((node) => node.id), ["c"]);
 });
 
-test("a school-focused department grid keeps only its school and folds cross appointments", () => {
+test("all layouts keep selected-school faculty and fold cross appointments", () => {
   const graph = core.parseGraph(schoolGridFixture());
-  const grid = core.stateFromSearch("?schools=scs&layout=departments", graph);
-  const filtered = core.filterGraph(graph, grid);
-  assert.deepEqual(filtered.edges.map((edge) => edge.id).sort(), ["c|d", "c|e"]);
-  assert.deepEqual(filtered.nodes.map((node) => node.id).sort(), ["c", "d", "e"]);
-  assert.equal(core.gridSchoolEligible(graph, graph.nodeById.get("a"), grid.schools), false);
-  assert.equal(core.gridSchoolEligible(graph, graph.nodeById.get("e"), grid.schools), true);
+  assert.equal(core.schoolEligible(graph, graph.nodeById.get("a"), ["scs"]), false);
+  assert.equal(core.schoolEligible(graph, graph.nodeById.get("e"), ["scs"]), true);
   assert.equal(core.layoutDepartmentId(graph.nodeById.get("e")), "one");
-  for (const node of filtered.nodes) {
-    assert.equal(core.layoutDepartmentId(node, grid.departments, graph, grid.schools), "two");
-  }
-  assert.deepEqual(
-    [...core.departmentGridLayout(filtered, graph, grid.departments, grid.schools).keys()].sort(),
-    ["c", "d", "e"],
-  );
+  for (const layout of ["collaboration", "department-force", "departments"]) {
+    const suffix = layout === "collaboration" ? "" : `&layout=${layout}`;
+    const scsState = core.stateFromSearch(`?schools=scs${suffix}`, graph);
+    const scs = core.filterGraph(graph, scsState);
+    assert.deepEqual(scs.edges.map((edge) => edge.id).sort(), ["c|d", "c|e"]);
+    assert.deepEqual(scs.nodes.map((node) => node.id).sort(), ["c", "d", "e"]);
+    assert(scs.nodes.every((node) => node.school_ids.includes("scs")));
+    for (const node of scs.nodes) {
+      assert.equal(core.layoutDepartmentId(node, scsState.departments, graph, scsState.schools), "two");
+    }
+    assert.deepEqual(
+      [...core.departmentGridLayout(scs, graph, scsState.departments, scsState.schools).keys()].sort(),
+      ["c", "d", "e"],
+    );
+    if (layout === "department-force") {
+      assert.deepEqual(
+        [...core.departmentForceLayout(scs, graph, 3, [], 0, scsState.schools).keys()].sort(),
+        ["c", "d", "e"],
+      );
+    }
 
-  const outward = core.filterGraph(graph, core.stateFromSearch("?schools=scs", graph));
-  assert(outward.edges.some((edge) => edge.id === "b|c"));
-  const force = core.filterGraph(graph, core.stateFromSearch("?schools=scs&layout=department-force", graph));
-  assert(force.edges.some((edge) => edge.id === "b|c"));
+    const engineeringState = core.stateFromSearch(`?schools=engineering${suffix}`, graph);
+    const engineering = core.filterGraph(graph, engineeringState);
+    assert.deepEqual(engineering.edges.map((edge) => edge.id), ["a|b"]);
+    assert.deepEqual(engineering.nodes.map((node) => node.id), ["a", "b"]);
+    const withRoster = core.filterGraph(graph, { ...engineeringState, showUnconnected: true });
+    assert.deepEqual(withRoster.nodes.map((node) => node.id), ["a", "b", "e"]);
+    assert(withRoster.nodes.every((node) => node.school_ids.includes("engineering")));
+  }
   const unfilteredGrid = core.filterGraph(graph, core.stateFromSearch("?layout=departments", graph));
   assert(unfilteredGrid.edges.some((edge) => edge.id === "b|c"));
 });
 
-test("school-focused grid drops out-of-school department and person selections", () => {
+test("all layouts drop outside-school department and person selections from URLs", () => {
   const graph = core.parseGraph(schoolGridFixture());
-  const state = core.stateFromSearch(
-    "?schools=scs&layout=departments&departments=one&faculty=a,e", graph,
-  );
-  assert.deepEqual(state.departments, []);
-  assert.deepEqual(state.selectedIds, ["e"]);
-  assert.equal(core.stateToSearch(state, graph), "?schools=scs&layout=departments&faculty=e");
-  const filtered = core.filterGraph(graph, { ...state, selectedIds: ["a", "e"] });
-  assert.deepEqual(filtered.nodes.map((node) => node.id).sort(), ["c", "d", "e"]);
+  for (const layout of ["collaboration", "department-force", "departments"]) {
+    const suffix = layout === "collaboration" ? "" : `&layout=${layout}`;
+    const state = core.stateFromSearch(
+      `?schools=scs${suffix}&departments=one&faculty=a,e`, graph,
+    );
+    assert.deepEqual(state.departments, []);
+    assert.deepEqual(state.selectedIds, ["e"]);
+    assert.equal(core.stateToSearch(state, graph), `?schools=scs${suffix}&faculty=e`);
+    const filtered = core.filterGraph(graph, { ...state, selectedIds: ["a", "e"] });
+    assert.deepEqual(filtered.nodes.map((node) => node.id).sort(), ["c", "d", "e"]);
+  }
+  const engineering = core.stateFromSearch("?schools=engineering&departments=two&faculty=c,e", graph);
+  assert.deepEqual(engineering.departments, []);
+  assert.deepEqual(engineering.selectedIds, ["e"]);
+  assert.equal(core.stateToSearch(engineering, graph), "?schools=engineering&faculty=e");
   assert.equal(core.layoutDepartmentId(graph.nodeById.get("e"), ["two"], graph, ["scs"]), "two");
 });
 
-test("school-focused grid does not admit an external person linked only elsewhere", () => {
+test("all layouts reject an external person linked only to another school", () => {
   const value = schoolGridFixture();
   value.nodes.push({
     id: "external-historian",
@@ -247,14 +272,17 @@ test("school-focused grid does not admit an external person linked only elsewher
     works: [{ id: "w6", title: "Engineering history", year: 2023 }],
   });
   const graph = core.parseGraph(value);
-  const state = core.stateFromSearch(
-    "?schools=scs&layout=departments&faculty=external-historian", graph,
-  );
-  assert.deepEqual(state.selectedIds, []);
-  assert.equal(state.showExternal, false);
-  assert.equal(core.stateToSearch(state, graph), "?schools=scs&layout=departments");
-  assert.deepEqual(core.filterGraph(graph, { ...state, showExternal: true }).nodes
-    .map((node) => node.id).sort(), ["c", "d", "e"]);
+  for (const layout of ["collaboration", "department-force", "departments"]) {
+    const suffix = layout === "collaboration" ? "" : `&layout=${layout}`;
+    const state = core.stateFromSearch(
+      `?schools=scs${suffix}&faculty=external-historian`, graph,
+    );
+    assert.deepEqual(state.selectedIds, []);
+    assert.equal(state.showExternal, false);
+    assert.equal(core.stateToSearch(state, graph), `?schools=scs${suffix}`);
+    assert.deepEqual(core.filterGraph(graph, { ...state, showExternal: true }).nodes
+      .map((node) => node.id).sort(), ["c", "d", "e"]);
+  }
 });
 
 test("external coauthor stays outside CMU but is searchable and visible with an MCS collaborator", () => {
@@ -316,17 +344,25 @@ test("external coauthor stays outside CMU but is searchable and visible with an 
   const mcs = core.filterGraph(graph, mcsState);
   assert.equal(mcs.edges.length, 1);
   assert.deepEqual(mcs.nodes.map((node) => node.id).sort(), ["c", "external-paul-erdos"]);
-  const gridHidden = core.filterGraph(
-    graph, core.stateFromSearch("?schools=mcs&layout=departments", graph),
-  );
-  assert.deepEqual(gridHidden.nodes.map((node) => node.id), ["c"]);
-  assert.equal(gridHidden.nodes[0].hidden_external_connection, true);
-  const gridWithErdos = core.filterGraph(
-    graph, core.stateFromSearch("?schools=mcs&layout=departments&external=1", graph),
-  );
-  assert.deepEqual(gridWithErdos.nodes.map((node) => node.id).sort(), ["c", "external-paul-erdos"]);
-  assert.equal(gridWithErdos.edges.length, 1);
-  assert.equal(core.layoutDepartmentId(gridWithErdos.nodeById.get("c"), [], graph, ["mcs"]), "two");
+  for (const layout of ["collaboration", "department-force", "departments"]) {
+    const suffix = layout === "collaboration" ? "" : `&layout=${layout}`;
+    const hiddenView = core.stateFromSearch(`?schools=mcs${suffix}`, graph);
+    const hiddenGraph = core.filterGraph(graph, hiddenView);
+    assert.deepEqual(hiddenGraph.nodes.map((node) => node.id), ["c"]);
+    assert.equal(hiddenGraph.nodes[0].hidden_external_connection, true);
+    const visibleView = core.stateFromSearch(`?schools=mcs${suffix}&external=1`, graph);
+    const visibleGraph = core.filterGraph(graph, visibleView);
+    assert.deepEqual(visibleGraph.nodes.map((node) => node.id).sort(), ["c", "external-paul-erdos"]);
+    assert.equal(visibleGraph.edges.length, 1);
+    assert.equal(core.layoutDepartmentId(visibleGraph.nodeById.get("c"), [], graph, ["mcs"]), "two");
+    const selectedErdos = core.stateFromSearch(
+      `?schools=mcs${suffix}&faculty=external-paul-erdos,a`, graph,
+    );
+    assert.deepEqual(selectedErdos.selectedIds, ["external-paul-erdos"]);
+    assert.equal(selectedErdos.showExternal, true);
+    assert.equal(core.stateToSearch(selectedErdos, graph),
+      `?schools=mcs&external=1${suffix}&faculty=external-paul-erdos`);
+  }
   for (const positions of [
     core.collaborationLayout(mcs),
     core.departmentGridLayout(mcs, graph),
