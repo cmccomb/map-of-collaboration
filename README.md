@@ -19,7 +19,7 @@ publications behind every displayed connection.
 
 The default layout emphasizes the overall collaboration structure. Two
 shareable department views make links between groups easier to trace: an
-organic force layout with tunable cross-department and cross-college distance,
+organic force layout with tunable cross-department and cross-school/college distance,
 and a compact grid that keeps affiliation clusters aligned. With department filters active,
 faculty admitted through a secondary appointment join a selected affiliation's
 layout cluster. A selected school also determines their node color.
@@ -32,12 +32,16 @@ department. The optional Erdős node remains available for an observed link to a
 selected-school faculty member.
 
 The department force layout keeps its previous default (department distance
-`3`) and now offers levels `1`–`10`. Cross-college distance has a separate
-`0`–`10` control, with `0` neutral by default. Faculty count as being in
-different colleges only when they share no CMU school or college membership;
-external coauthors are not assigned a CMU college. The shareable URL stores
-nondefault values as `spacing` and `school_spacing`. Both controls change
-positions only; they do not add, remove, or reclassify coauthorship edges.
+`3`) and offers levels `1`–`10`. School and college are the same top-level
+grouping in this map. Cross-school/college distance has a separate `0`–`10`
+control, with `0` neutral by default. At larger values, Engineering, MCS, and
+SCS each have a separate layout anchor. A cross-appointed faculty member uses
+one display group in the whole-CMU layout; the less populated exclusively
+affiliated school gets that member. Selecting a school or college places the
+member in the selected unit instead. This display choice does not change the
+underlying appointments, filters, or coauthorship links. External coauthors
+have no CMU school or college. The shareable URL stores nondefault values as
+`spacing` and `school_spacing`.
 
 ## What this graph does—and does not—show
 

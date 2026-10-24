@@ -556,6 +556,39 @@
     );
   }
 
+  function forceDepartmentAssignments(
+    filtered, graph, schoolSpacing = 0, selectedDepartmentIds = [], selectedSchoolIds = [],
+  ) {
+    const exclusiveSchoolCounts = new Map(graph.schools.map((school) => [school.school_id, 0]));
+    for (const node of filtered.nodes) {
+      if (node.school_ids?.length === 1) {
+        const schoolId = node.school_ids[0];
+        exclusiveSchoolCounts.set(schoolId, (exclusiveSchoolCounts.get(schoolId) || 0) + 1);
+      }
+    }
+    return new Map(filtered.nodes.map((node) => {
+      // A joint appointment needs one display group in the whole-CMU view.
+      // Assign it to the school with fewer exclusive visible colleagues.
+      const primarySchool = graph.departmentById.get(node.primary_department)?.school_id || "";
+      const preferredSchool = !selectedDepartmentIds.length && !selectedSchoolIds.length
+        && schoolSpacing > 0 && node.school_ids?.length > 1
+        ? [...node.school_ids].sort((left, right) =>
+          (exclusiveSchoolCounts.get(left) || 0) - (exclusiveSchoolCounts.get(right) || 0)
+          || Number(left === primarySchool) - Number(right === primarySchool)
+          || left.localeCompare(right))[0]
+        : "";
+      return [
+        node.id,
+        layoutDepartmentId(
+          node,
+          selectedDepartmentIds,
+          graph,
+          preferredSchool ? [preferredSchool] : selectedSchoolIds,
+        ),
+      ];
+    }));
+  }
+
   function connectionsForNode(filtered, nodeId) {
     return filtered.edges
       .filter((edge) => edge.source === nodeId || edge.target === nodeId)
@@ -666,6 +699,7 @@
       schoolSpacing = 0,
       departmentAnchors = new Map(),
       departmentByNode = new Map(),
+      schoolByNode = new Map(),
     } = {},
   ) {
     const nodes = filtered.nodes;
@@ -680,19 +714,11 @@
       ? new Uint8Array(nodes.length * nodes.length)
       : null;
     if (crossSchoolPairs) {
-      const schoolSets = nodes.map((node) => new Set(node.school_ids || []));
+      const layoutSchools = nodes.map((node) => schoolByNode.get(node.id) || "");
       for (let left = 0; left < nodes.length; left += 1) {
-        if (!schoolSets[left].size) continue;
+        if (!layoutSchools[left]) continue;
         for (let right = left + 1; right < nodes.length; right += 1) {
-          if (!schoolSets[right].size) continue;
-          let sharedSchool = false;
-          for (const schoolId of schoolSets[left]) {
-            if (schoolSets[right].has(schoolId)) {
-              sharedSchool = true;
-              break;
-            }
-          }
-          if (sharedSchool) continue;
+          if (!layoutSchools[right] || layoutSchools[left] === layoutSchools[right]) continue;
           crossSchoolPairs[left * nodes.length + right] = 1;
           crossSchoolPairs[right * nodes.length + left] = 1;
         }
@@ -856,11 +882,17 @@
     return candidates[0].positions;
   }
 
-  function departmentGridLayout(filtered, graph, selectedDepartmentIds = [], selectedSchoolIds = []) {
+  function departmentGridLayout(
+    filtered,
+    graph,
+    selectedDepartmentIds = [],
+    selectedSchoolIds = [],
+    assignedDepartments = null,
+  ) {
     if (!filtered?.nodes?.length) return new Map();
 
     const departmentByNode = new Map(
-      filtered.nodes.map((node) => [
+      assignedDepartments || filtered.nodes.map((node) => [
         node.id, layoutDepartmentId(node, selectedDepartmentIds, graph, selectedSchoolIds),
       ]),
     );
@@ -975,12 +1007,17 @@
     const spacingLevel = clamp(integer(requestedSpacing, 3), 1, 10);
     const schoolSpacingLevel = clamp(integer(requestedSchoolSpacing, 0), 0, 10);
     const openness = departmentSeparation(spacingLevel);
-    const departmentByNode = new Map(
+    const departmentByNode = forceDepartmentAssignments(
+      filtered, graph, schoolSpacingLevel, selectedDepartmentIds, selectedSchoolIds,
+    );
+    const gridSeed = departmentGridLayout(
+      filtered, graph, selectedDepartmentIds, selectedSchoolIds, departmentByNode,
+    );
+    const schoolByNode = new Map(
       filtered.nodes.map((node) => [
-        node.id, layoutDepartmentId(node, selectedDepartmentIds, graph, selectedSchoolIds),
+        node.id, graph.departmentById.get(departmentByNode.get(node.id))?.school_id || "",
       ]),
     );
-    const gridSeed = departmentGridLayout(filtered, graph, selectedDepartmentIds, selectedSchoolIds);
     const nodesByDepartment = new Map();
     for (const node of filtered.nodes) {
       const departmentId = departmentByNode.get(node.id);
@@ -999,12 +1036,31 @@
       });
     }
 
-    const anchorScale = nodesByDepartment.size === 1 ? 0 : 0.55 + openness * 0.18;
+    const anchorScale = nodesByDepartment.size === 1
+      ? 0
+      : Math.max(1.45, 0.55 + openness * 0.18);
+    const activeSchools = graph.schools
+      .map((school) => school.school_id)
+      .filter((schoolId) => [...schoolByNode.values()].includes(schoolId));
+    const schoolRadius = activeSchools.length > 1
+      ? Math.sqrt(departmentSeparation(schoolSpacingLevel)) * 1.1
+      : 0;
+    const schoolAnchors = new Map(activeSchools.map((schoolId, index) => {
+      const angle = -Math.PI / 2 + (index / activeSchools.length) * Math.PI * 2;
+      return [schoolId, {
+        x: Math.cos(angle) * schoolRadius,
+        y: Math.sin(angle) * schoolRadius,
+      }];
+    }));
     const departmentAnchors = new Map(
-      [...gridCenters].map(([departmentId, center]) => [
-        departmentId,
-        { x: center.x * anchorScale, y: center.y * anchorScale },
-      ]),
+      [...gridCenters].map(([departmentId, center]) => {
+        const schoolId = graph.departmentById.get(departmentId)?.school_id;
+        const schoolAnchor = schoolAnchors.get(schoolId) || { x: 0, y: 0 };
+        return [departmentId, {
+          x: schoolAnchor.x + center.x * anchorScale,
+          y: schoolAnchor.y + center.y * anchorScale,
+        }];
+      }),
     );
     const seed = new Map();
     for (const node of filtered.nodes) {
@@ -1025,6 +1081,7 @@
       schoolSpacing: schoolSpacingLevel,
       departmentAnchors,
       departmentByNode,
+      schoolByNode,
     });
   }
 
@@ -1146,6 +1203,7 @@
     edgeCrossingCount,
     edgesToCsv,
     facultyLabelEligible,
+    forceDepartmentAssignments,
     facultyMatches,
     filterGraph,
     schoolEligible,
