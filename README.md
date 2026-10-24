@@ -24,6 +24,12 @@ and a compact grid that keeps affiliation clusters aligned. With department filt
 faculty admitted through a secondary appointment join a selected affiliation's
 layout cluster while retaining their primary-affiliation color.
 
+A school selection keeps outward CMU collaborators in Collaboration and Dept.
+force. In Dept. grid, it limits CMU faculty and links to the selected schools,
+shows only their department clusters, and places cross-appointed faculty in a
+department of a selected school. The optional Erdős node remains available for
+an observed link to a selected-school faculty member.
+
 The department force layout keeps its previous default (department distance
 `3`) and now offers levels `1`–`10`. Cross-college distance has a separate
 `0`–`10` control, with `0` neutral by default. Faculty count as being in
@@ -92,8 +98,11 @@ artifact: `catalogs.schools` with `school_id`, `title`, and `directory_url`;
 still comes only from shared `points[].faculty_ids`. Existing Engineering-only
 artifacts without school fields resolve to one `engineering` school.
 
-`?schools=scs` shows an observed edge when **either** endpoint belongs to SCS,
-so collaborators in another school remain visible. Existing `?departments=`
+`?schools=scs` shows an observed edge when **either** endpoint belongs to SCS
+in Collaboration and Dept. force, so collaborators in another school remain
+visible. In Dept. grid, both CMU endpoints must belong to a selected school;
+the optional historical coauthor can appear through a selected-school faculty
+link. Existing `?departments=`
 links keep their original rule for faculty pairs: both endpoints must belong to
 a selected department or program. `?cross_school=1` selects faculty pairs with
 no school in common; this is separate from the existing cross-department filter.

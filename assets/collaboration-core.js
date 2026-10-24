@@ -259,6 +259,34 @@
     return node.kind === "external_coauthor" ? EXTERNAL_LAYOUT_GROUP : node.primary_department;
   }
 
+  function hasSchoolGridFocus(state) {
+    return state.layout === "departments" && Boolean(state.schools?.length);
+  }
+
+  function gridSchoolEligible(graph, node, selectedSchoolIds) {
+    const selectedSchools = new Set(selectedSchoolIds);
+    if (node.kind !== "external_coauthor") {
+      return node.school_ids.some((id) => selectedSchools.has(id));
+    }
+    return graph.edges.some((edge) => {
+      if (edge.source !== node.id && edge.target !== node.id) return false;
+      const other = graph.nodeById.get(edge.source === node.id ? edge.target : edge.source);
+      return other?.school_ids.some((id) => selectedSchools.has(id));
+    });
+  }
+
+  function normalizeView(state, graph) {
+    if (!hasSchoolGridFocus(state)) return state;
+    const selectedSchools = new Set(state.schools);
+    return {
+      ...state,
+      departments: (state.departments || []).filter((id) =>
+        selectedSchools.has(graph.departmentById.get(id)?.school_id)),
+      selectedIds: validFacultyIds(state.selectedIds || [], graph).filter((id) =>
+        gridSchoolEligible(graph, graph.nodeById.get(id), selectedSchools)),
+    };
+  }
+
   function stateFromSearch(search, graph) {
     const defaults = defaultState(graph);
     const params = new URLSearchParams(String(search || "").replace(/^\?/, ""));
@@ -285,9 +313,10 @@
       params.getAll("faculty").flatMap((value) => value.split(",")),
       graph,
     );
-    const selectedExternal = selectedIds.some((id) =>
-      graph.nodeById.get(id)?.kind === "external_coauthor");
-    return {
+    const layout = ["departments", "department-force"].includes(params.get("layout"))
+      ? params.get("layout")
+      : "collaboration";
+    const view = normalizeView({
       departments,
       schools,
       fromYear,
@@ -295,20 +324,22 @@
       minimum: clamp(integer(params.get("minimum"), 1), 1, 20),
       crossDepartment: params.get("cross") === "1",
       crossSchool: graph.schools.length > 1 && params.get("cross_school") === "1",
-      showExternal: params.get("external") === "1" || selectedExternal,
+      showExternal: params.get("external") === "1",
       showUnconnected: params.get("unconnected") === "1",
-      layout: ["departments", "department-force"].includes(params.get("layout"))
-        ? params.get("layout")
-        : "collaboration",
+      layout,
       departmentSpacing: clamp(integer(params.get("spacing"), 3), 1, 10),
       schoolSpacing: graph.schools.length > 1
         ? clamp(integer(params.get("school_spacing"), 0), 0, 10)
         : 0,
       selectedIds,
-    };
+    }, graph);
+    view.showExternal ||= view.selectedIds.some((id) =>
+      graph.nodeById.get(id)?.kind === "external_coauthor");
+    return view;
   }
 
   function stateToSearch(state, graph) {
+    state = normalizeView(state, graph);
     const defaults = defaultState(graph);
     const params = new URLSearchParams();
     if (state.departments?.length) params.set("departments", [...state.departments].sort().join(","));
@@ -354,8 +385,10 @@
   }
 
   function filterGraph(graph, state) {
+    state = normalizeView(state, graph);
     const selectedDepartments = new Set(state.departments || []);
     const selectedSchools = new Set(state.schools || []);
+    const focusedGrid = hasSchoolGridFocus(state);
     const departmentCandidateIds = new Set(
       graph.nodes
         .filter((node) => nodeMatchesDepartments(node, selectedDepartments))
@@ -384,7 +417,15 @@
           : target.kind === "external_coauthor" ? !sourceMatches
             : !sourceMatches || !targetMatches) continue;
       }
-      if (selectedSchools.size && !schoolCandidateIds.has(edge.source) && !schoolCandidateIds.has(edge.target)) continue;
+      if (selectedSchools.size) {
+        const sourceMatches = schoolCandidateIds.has(edge.source);
+        const targetMatches = schoolCandidateIds.has(edge.target);
+        if (focusedGrid) {
+          const external = graph.nodeById.get(edge.source).kind === "external_coauthor"
+            || graph.nodeById.get(edge.target).kind === "external_coauthor";
+          if (external ? !sourceMatches && !targetMatches : !sourceMatches || !targetMatches) continue;
+        } else if (!sourceMatches && !targetMatches) continue;
+      }
       if (state.crossDepartment && !edge.cross_department) continue;
       if (state.crossSchool && !edge.cross_school) continue;
       const works = edge.works.filter((work) => includesYear(work, state, graph));
@@ -420,7 +461,9 @@
       });
     }
     validFacultyIds(state.selectedIds || [], graph).forEach((id) => {
-      if (state.showExternal || graph.nodeById.get(id).kind !== "external_coauthor") visibleIds.add(id);
+      const node = graph.nodeById.get(id);
+      if (focusedGrid && node.kind === "external_coauthor" && !visibleIds.has(id)) return;
+      if (state.showExternal || node.kind !== "external_coauthor") visibleIds.add(id);
     });
 
     const nodes = graph.nodes
@@ -496,17 +539,23 @@
     );
   }
 
-  function layoutDepartmentId(node, selectedDepartmentIds = []) {
+  function layoutDepartmentId(node, selectedDepartmentIds = [], graph = null, selectedSchoolIds = []) {
     if (node?.kind === "external_coauthor") return layoutGroup(node);
     const departments = uniqueStrings(node?.departments);
+    const selectedSchools = new Set(selectedSchoolIds);
+    const inSelectedSchools = selectedSchools.size && graph
+      ? departments.filter((id) => selectedSchools.has(graph.departmentById.get(id)?.school_id))
+      : departments;
+    const choices = inSelectedSchools.length ? inSelectedSchools : departments;
     const primaryDepartment = String(node?.primary_department || departments[0] || "").trim();
     const selectedDepartments = new Set(uniqueStrings(selectedDepartmentIds));
-    if (!selectedDepartments.size || selectedDepartments.has(primaryDepartment)) {
+    if (choices.includes(primaryDepartment)
+      && (!selectedDepartments.size || selectedDepartments.has(primaryDepartment))) {
       return primaryDepartment;
     }
     return (
-      departments.find((departmentId) => selectedDepartments.has(departmentId)) ||
-      primaryDepartment
+      choices.find((departmentId) => selectedDepartments.has(departmentId)) ||
+      choices[0] || primaryDepartment
     );
   }
 
@@ -810,11 +859,13 @@
     return candidates[0].positions;
   }
 
-  function departmentGridLayout(filtered, graph, selectedDepartmentIds = []) {
+  function departmentGridLayout(filtered, graph, selectedDepartmentIds = [], selectedSchoolIds = []) {
     if (!filtered?.nodes?.length) return new Map();
 
     const departmentByNode = new Map(
-      filtered.nodes.map((node) => [node.id, layoutDepartmentId(node, selectedDepartmentIds)]),
+      filtered.nodes.map((node) => [
+        node.id, layoutDepartmentId(node, selectedDepartmentIds, graph, selectedSchoolIds),
+      ]),
     );
     const groups = new Map();
     for (const node of filtered.nodes) {
@@ -1097,7 +1148,10 @@
     facultyLabelEligible,
     facultyMatches,
     filterGraph,
+    gridSchoolEligible,
+    hasSchoolGridFocus,
     layoutDepartmentId,
+    normalizeView,
     parseGraph,
     safeExternalUrl,
     selectionLayout,

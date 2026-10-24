@@ -227,12 +227,8 @@
       }
       renderControls();
       syncControls();
-      applyView({ fit: true, updateUrl: false });
+      applyView({ fit: true, updateUrl: core.hasSchoolGridFocus(state.view) });
       const counts = state.graph.counts;
-      elements.facultySearchNote.textContent = `Search all ${plural(
-        counts.faculty_count,
-        "cataloged faculty member",
-      )} across ${plural(state.graph.departments.length, "department or program", "departments and programs")}, including people without mapped works. Connected faculty appear on the graph by default.`;
       elements.status.textContent = `${plural(counts.faculty_count, "faculty member")}${
         counts.external_coauthor_count
           ? ` · ${plural(counts.external_coauthor_count, "external coauthor")}`
@@ -269,27 +265,12 @@
     }
   }
 
-  function renderControls() {
-    elements.schoolOptions.replaceChildren();
-    elements.schoolFieldset.hidden = state.graph.schools.length <= 1;
-    elements.crossSchoolRow.hidden = state.graph.schools.length <= 1;
-    for (const school of state.graph.schools) {
-      const label = element("label", "department-option");
-      const input = element("input");
-      input.type = "checkbox";
-      input.value = school.school_id;
-      input.name = "school";
-      const content = element("span");
-      content.style.setProperty("--dot", css("--accent-strong"));
-      const dot = element("i");
-      dot.setAttribute("aria-hidden", "true");
-      content.append(dot, document.createTextNode(school.title));
-      label.append(input, content);
-      elements.schoolOptions.append(label);
-    }
+  function renderDepartmentControls() {
+    const focusedGrid = core.hasSchoolGridFocus(state.view);
     elements.departmentOptions.replaceChildren();
     elements.departmentLegend.replaceChildren();
     for (const department of state.graph.departments) {
+      if (focusedGrid && !state.view.schools.includes(department.school_id)) continue;
       const label = element("label", "department-option");
       const input = element("input");
       input.type = "checkbox";
@@ -313,16 +294,53 @@
       legendButton.append(legendDot, element("span", "", department.short_title));
       elements.departmentLegend.append(legendButton);
     }
-    if (hasExternalCoauthors() && state.view.showExternal) {
+  }
+
+  function renderExternalLegend() {
+    elements.departmentLegend.querySelector(".external-legend")?.remove();
+    if (state.view.showExternal && state.filtered?.nodes.some(
+      (node) => node.kind === "external_coauthor")) {
       const key = element("div", "external-legend");
       const dot = element("span", "legend-dot");
       dot.style.setProperty("--dot", css("--warm"));
       key.append(dot, element("span", "", "Historical coauthor outside CMU"));
       elements.departmentLegend.append(key);
     }
-    elements.facultySearch.placeholder = hasExternalCoauthors()
-      ? `Search ${formatNumber(state.graph.nodes.length)} people`
-      : `Search ${formatNumber(state.graph.nodes.length)} faculty`;
+  }
+
+  function renderScopeCopy() {
+    const focusedGrid = core.hasSchoolGridFocus(state.view);
+    elements.facultySearchNote.textContent = focusedGrid
+      ? "Search selected-school faculty and linked historical coauthors, including people without mapped works. Connected faculty appear by default."
+      : `Search all ${plural(
+          state.graph.counts.faculty_count,
+          "cataloged faculty member",
+        )} across ${plural(state.graph.departments.length, "department or program", "departments and programs")}, including people without mapped works. Connected faculty appear on the graph by default.`;
+    document.querySelector("#canvas-instructions").textContent = focusedGrid
+      ? "Drag to pan, use the mouse wheel or zoom buttons to zoom, and select nodes to inspect shared works. Search selected-school faculty and linked historical coauthors."
+      : "Drag to pan, use the mouse wheel or zoom buttons to zoom, and select nodes to compare observed collaborators. Select a node again to remove it. Search to reach every person.";
+  }
+
+  function renderControls() {
+    elements.schoolOptions.replaceChildren();
+    elements.schoolFieldset.hidden = state.graph.schools.length <= 1;
+    elements.crossSchoolRow.hidden = state.graph.schools.length <= 1;
+    for (const school of state.graph.schools) {
+      const label = element("label", "department-option");
+      const input = element("input");
+      input.type = "checkbox";
+      input.value = school.school_id;
+      input.name = "school";
+      const content = element("span");
+      content.style.setProperty("--dot", css("--accent-strong"));
+      const dot = element("i");
+      dot.setAttribute("aria-hidden", "true");
+      content.append(dot, document.createTextNode(school.title));
+      label.append(input, content);
+      elements.schoolOptions.append(label);
+    }
+    renderDepartmentControls();
+    renderScopeCopy();
     elements.yearMin.min = String(state.graph.years.minimum);
     elements.yearMin.max = String(state.graph.years.maximum);
     elements.yearMax.min = String(state.graph.years.minimum);
@@ -377,7 +395,13 @@
   }
 
   function applyView({ fit = false, updateUrl = true, animate = false } = {}) {
+    state.view = core.normalizeView(state.view, state.graph);
     state.filtered = core.filterGraph(state.graph, state.view);
+    if (core.hasSchoolGridFocus(state.view)) {
+      state.view.selectedIds = state.view.selectedIds.filter((id) => state.filtered.nodeIds.has(id));
+    }
+    renderExternalLegend();
+    renderSelectedFaculty();
     state.expandedEdgeId = state.filtered.edgeById.has(state.expandedEdgeId)
       ? state.expandedEdgeId
       : "";
@@ -555,7 +579,9 @@
             state.view.schoolSpacing,
           )
         : state.view.layout === "departments"
-          ? core.departmentGridLayout(selection, state.graph, state.view.departments)
+          ? core.departmentGridLayout(
+              selection, state.graph, state.view.departments, state.view.schools,
+            )
           : core.selectionLayout(state.filtered, selectedIds);
     fitNodes(selection.nodes, {
       maximumScale: selection.edges.length ? 560 : 420,
@@ -603,7 +629,9 @@
               state.view.schoolSpacing,
             )
           : state.view.layout === "departments"
-            ? core.departmentGridLayout(state.filtered, state.graph, state.view.departments)
+            ? core.departmentGridLayout(
+                state.filtered, state.graph, state.view.departments, state.view.schools,
+              )
             : spreadOverviewLayout(core.collaborationLayout(state.filtered));
       fitNodes(state.filtered?.nodes || [], {
         positions,
@@ -813,8 +841,11 @@
 
   function drawDepartmentLabels(occupied, now, transform) {
     const groups = new Map();
+    const focusedGrid = core.hasSchoolGridFocus(state.view);
     for (const node of state.filtered.nodes) {
-      const departmentId = core.layoutDepartmentId(node, state.view.departments);
+      const departmentId = core.layoutDepartmentId(
+        node, state.view.departments, state.graph, focusedGrid ? state.view.schools : [],
+      );
       if (!groups.has(departmentId)) groups.set(departmentId, []);
       groups.get(departmentId).push(node);
     }
@@ -823,6 +854,7 @@
     context.font = "700 11px Inter, ui-sans-serif, system-ui, sans-serif";
 
     for (const department of state.graph.departments) {
+      if (focusedGrid && !state.view.schools.includes(department.school_id)) continue;
       if (!core.departmentLabelEligible(department.department_id, state.view.departments)) {
         continue;
       }
@@ -1293,9 +1325,12 @@
       .filter(Boolean);
     elements.selectedFaculty.replaceChildren();
     elements.selectedFaculty.hidden = selectedNodes.length === 0;
+    const searchScope = core.hasSchoolGridFocus(state.view)
+      ? "school faculty and linked coauthors"
+      : `${formatNumber(state.graph?.nodes.length)} ${hasExternalCoauthors() ? "people" : "faculty"}`;
     elements.facultySearch.placeholder = selectedNodes.length
       ? hasExternalCoauthors() ? "Add another person" : "Add another faculty member"
-      : `Search ${formatNumber(state.graph?.nodes.length)} ${hasExternalCoauthors() ? "people" : "faculty"}`;
+      : `Search ${searchScope}`;
     for (const node of selectedNodes) {
       const item = element("li");
       const name = element("span", "", node.name);
@@ -1313,9 +1348,10 @@
     state.suggestionNodes = core.facultyMatches(
       state.graph,
       query,
-      9,
+      state.graph.nodes.length,
       state.view.selectedIds,
-    );
+    ).filter((node) => !core.hasSchoolGridFocus(state.view)
+      || core.gridSchoolEligible(state.graph, node, state.view.schools)).slice(0, 9);
     state.activeSuggestion = state.suggestionNodes.length ? 0 : -1;
     elements.facultySuggestions.replaceChildren();
     if (!query.trim()) {
@@ -1447,14 +1483,21 @@
     resizeObserver.observe(elements.canvas);
     window.addEventListener("collaboration-theme-change", () => {
       renderControls();
+      renderExternalLegend();
       syncControls();
       requestRender();
     });
     window.addEventListener("popstate", () => {
       if (!state.graph) return;
       state.view = core.stateFromSearch(window.location.search, state.graph);
+      renderControls();
       syncControls();
-      applyView({ fit: true, updateUrl: false, animate: true });
+      if (elements.facultySearch.value) renderSuggestions();
+      applyView({
+        fit: true,
+        updateUrl: core.hasSchoolGridFocus(state.view),
+        animate: true,
+      });
     });
 
     elements.canvas.addEventListener("pointerdown", (event) => {
@@ -1569,6 +1612,11 @@
       state.view.schools = [...elements.schoolOptions.querySelectorAll("input:checked")].map(
         (input) => input.value,
       );
+      state.view = core.normalizeView(state.view, state.graph);
+      renderDepartmentControls();
+      renderScopeCopy();
+      syncControls();
+      if (elements.facultySearch.value) renderSuggestions();
       applyView({ fit: true, animate: true });
     });
     elements.departmentOptions.addEventListener("change", () => {
@@ -1631,7 +1679,11 @@
     elements.layoutOptions.addEventListener("change", (event) => {
       if (!event.target.matches('input[name="graph-layout"]')) return;
       state.view.layout = event.target.value;
+      state.view = core.normalizeView(state.view, state.graph);
+      renderDepartmentControls();
+      renderScopeCopy();
       syncControls();
+      if (elements.facultySearch.value) renderSuggestions();
       applyView({ fit: true, animate: true });
     });
     elements.departmentSpacing.addEventListener("input", () => {
