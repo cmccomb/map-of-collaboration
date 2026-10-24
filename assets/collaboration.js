@@ -138,13 +138,19 @@
       : department.color_dark;
   }
 
+  function academicHomeColor(homeGroup) {
+    const home = state.graph?.academicHomeByGroup.get(homeGroup);
+    if (!home) return css("--primary-unresolved");
+    return document.documentElement.dataset.resolvedTheme === "light"
+      ? home.color_light : home.color_dark;
+  }
+
   function nodeColor(node) {
     return node?.kind === "external_coauthor"
       ? css("--warm")
-      : departmentColor(state.layoutDepartments.get(node.id)
-        || (state.view?.schools?.length
-          ? core.layoutDepartmentId(node, state.view.departments, state.graph, state.view.schools)
-          : node?.primary_department));
+      : node?.primary_home_group
+        ? academicHomeColor(node.primary_home_group)
+        : css("--primary-unresolved");
   }
 
   function nodeAffiliation(node) {
@@ -203,7 +209,7 @@
         document.querySelector(".department-fieldset .field-note").textContent =
           "Faculty pairs must both match; a verified outside coauthor stays visible when the CMU faculty endpoint matches.";
         document.querySelector("#cross-department + span small").textContent =
-          "Show CMU faculty pairs in different departments";
+          "Show faculty pairs with different documented academic units";
         document.querySelector("#cross-school + span small").textContent =
           "Show CMU faculty pairs with no school in common";
         document.querySelector(".method-note").append(element(
@@ -271,6 +277,10 @@
 
   function renderDepartmentControls() {
     const schoolFocused = core.hasSchoolFocus(state.view);
+    const scopedFaculty = state.graph.nodes.filter((node) =>
+      node.kind !== "external_coauthor" &&
+      (!schoolFocused || core.schoolEligible(state.graph, node, state.view.schools)));
+    const primaryGroups = new Set(scopedFaculty.map((node) => node.primary_home_group));
     elements.departmentOptions.replaceChildren();
     elements.departmentLegend.replaceChildren();
     updateLegendAffiliation();
@@ -289,24 +299,42 @@
       label.append(input, content);
       elements.departmentOptions.append(label);
 
+    }
+    for (const home of state.graph.academic_homes) {
+      if (!primaryGroups.has(home.home_group)) continue;
+      const otherSchool = schoolFocused && !state.view.schools.includes(home.school_id);
+      const label = otherSchool
+        ? `${home.short_title} · other school primary`
+        : `${home.short_title}${home.home_type === "school" ? " · school-level" :
+          home.home_type === "academic_area" ? " · academic area" : ""}`;
+      const dot = element("span", "legend-dot");
+      dot.style.setProperty("--dot", academicHomeColor(home.home_group));
+      dot.setAttribute("aria-hidden", "true");
+      if (otherSchool || ["school", "academic_area"].includes(home.home_type)) {
+        const key = element("div", "affiliation-legend");
+        key.append(dot, element("span", "", label));
+        elements.departmentLegend.append(key);
+        continue;
+      }
       const legendButton = element("button");
       legendButton.type = "button";
-      legendButton.dataset.departmentId = department.department_id;
-      legendButton.title = `Filter to ${department.title}`;
-      const legendDot = element("span", "legend-dot");
-      legendDot.style.setProperty("--dot", departmentColor(department.department_id));
-      legendDot.setAttribute("aria-hidden", "true");
-      legendButton.append(legendDot, element("span", "", department.short_title));
+      legendButton.dataset.departmentId = home.home_id;
+      legendButton.title = `Filter to ${home.title}`;
+      legendButton.append(dot, element("span", "", label));
       elements.departmentLegend.append(legendButton);
+    }
+    if (scopedFaculty.some((node) => !node.primary_home_group)) {
+      const key = element("div", "affiliation-legend");
+      const dot = element("span", "legend-dot");
+      dot.style.setProperty("--dot", css("--primary-unresolved"));
+      key.append(dot, element("span", "", "Primary unresolved"));
+      elements.departmentLegend.append(key);
     }
   }
 
   function updateLegendAffiliation() {
-    document.querySelector(".legend-heading p").textContent = core.hasSchoolFocus(state.view)
-      ? "Selected school or college"
-      : state.view?.layout === "department-force" && state.view.schoolSpacing > 0
-        ? "Layout affiliation"
-        : "Primary affiliation";
+    document.querySelector(".legend-heading h2").textContent = "Academic home color";
+    document.querySelector(".legend-heading p").textContent = "Reviewed or inferred primary display home";
   }
 
   function renderExternalLegend() {
@@ -328,7 +356,7 @@
       : `Search all ${plural(
           state.graph.counts.faculty_count,
           "cataloged faculty member",
-        )} across ${plural(state.graph.departments.length, "department or program", "departments and programs")}, including people without mapped works. Connected faculty appear on the graph by default.`;
+        )} across CMU schools and academic units, including people without mapped works. Connected faculty appear on the graph by default.`;
     document.querySelector("#canvas-instructions").textContent = schoolFocused
       ? "Drag to pan, use the mouse wheel or zoom buttons to zoom, and select nodes to inspect shared works. Search selected-school faculty and linked historical coauthors."
       : "Drag to pan, use the mouse wheel or zoom buttons to zoom, and select nodes to compare observed collaborators. Select a node again to remove it. Search to reach every person.";
@@ -874,12 +902,18 @@
     const origin = { x: transform.x, y: transform.y };
     context.font = "700 11px Inter, ui-sans-serif, system-ui, sans-serif";
 
-    for (const department of state.graph.departments) {
-      if (schoolFocused && !state.view.schools.includes(department.school_id)) continue;
-      if (!core.departmentLabelEligible(department.department_id, state.view.departments)) {
+    const layoutGroups = [
+      ...state.graph.academic_homes,
+      { home_group: core.UNRESOLVED_LAYOUT_GROUP, short_title: "Primary unresolved" },
+    ];
+    for (const home of layoutGroups) {
+      const unresolved = home.home_group === core.UNRESOLVED_LAYOUT_GROUP;
+      if (!unresolved && schoolFocused && !state.view.schools.includes(home.school_id)) continue;
+      if (!unresolved && ["department", "constituent_school", "institute"].includes(home.home_type)
+        && !core.departmentLabelEligible(home.home_group, state.view.departments)) {
         continue;
       }
-      const nodes = groups.get(department.department_id);
+      const nodes = groups.get(home.home_group);
       if (!nodes?.length) continue;
       const points = nodes.map((node) => worldToScreen(node, now, transform));
       const center = {
@@ -898,7 +932,7 @@
             (point.x - center.x) * direction.x + (point.y - center.y) * direction.y,
         ),
       );
-      const text = department.short_title;
+      const text = home.short_title;
       const width = Math.min(
         Math.ceil(context.measureText(text).width) + 18,
         Math.max(72, viewport.right - viewport.left - 12),
@@ -927,7 +961,8 @@
       context.fillStyle = css("--tooltip");
       roundedRect(context, rect.x, rect.y, rect.width, rect.height, 999);
       context.fill();
-      context.strokeStyle = departmentColor(department.department_id);
+      context.strokeStyle = unresolved
+        ? css("--primary-unresolved") : academicHomeColor(home.home_group);
       context.lineWidth = 1.4;
       context.stroke();
       context.globalAlpha = 1;
@@ -1162,6 +1197,39 @@
       departmentList.append(chip);
     }
     header.append(departmentList);
+    if (node.kind !== "external_coauthor") {
+      const primary = element("p", "detail-primary");
+      if (node.primary_home_group) {
+        const title = node.primary_academic_home_title
+          || state.graph.academicHomeByGroup.get(node.primary_home_group)?.title
+          || node.primary_academic_home_id;
+        const basis = {
+          inferred_advisee_count: "inferred from PhD advisees",
+          inferred_profile_title: "inferred from faculty title",
+          reviewed: "reviewed",
+          single_included_membership: "sole included academic unit",
+          school_fallback: "school-level home; no narrower unit verified",
+        }[node.primary_academic_home_basis] || "display choice";
+        const typeLabel = {
+          department: "department",
+          constituent_school: "constituent school",
+          institute: "institute",
+          academic_area: "academic area",
+          school: "school",
+        }[node.primary_academic_home_type] || "academic home";
+        primary.append(document.createTextNode(`Primary academic home: ${title} (${typeLabel}; ${basis})`));
+        if (node.primary_academic_home_source_url) {
+          const source = element("a", "", "Evidence ↗");
+          source.href = node.primary_academic_home_source_url;
+          source.target = "_blank";
+          source.rel = "noopener noreferrer";
+          primary.append(document.createTextNode(" · "), source);
+        }
+      } else {
+        primary.textContent = "Primary academic home unresolved";
+      }
+      header.append(primary);
+    }
     const links = element("div", "detail-links");
     for (const [label, url] of [
       [node.kind === "external_coauthor" ? "Coauthor source ↗" : "Homepage ↗", node.homepage_url],

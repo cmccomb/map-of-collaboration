@@ -24,6 +24,9 @@ const DEPARTMENT_PRESENTATION = Object.freeze({
   ece: { short_title: "ECE", color_dark: "#f39dca", color_light: "#a63f76" },
   epp: { short_title: "EPP", color_dark: "#dcaa91", color_light: "#8d573d" },
   hcii: { short_title: "HCII", color_dark: "#ffb8d7", color_light: "#a24370" },
+  "heinz-faculty": { short_title: "Heinz faculty", color_dark: "#edb98d", color_light: "#9c612f" },
+  "heinz-ism": { short_title: "Heinz ISM", color_dark: "#94d2c5", color_light: "#2b8574" },
+  "heinz-ppm": { short_title: "Heinz PPM", color_dark: "#f4c397", color_light: "#a36232" },
   iii: { short_title: "iii", color_dark: "#80d6cf", color_light: "#247c76" },
   ini: { short_title: "INI", color_dark: "#d5d279", color_light: "#777518" },
   lti: { short_title: "LTI", color_dark: "#b8a7ff", color_light: "#6954b3" },
@@ -34,7 +37,40 @@ const DEPARTMENT_PRESENTATION = Object.freeze({
   physics: { short_title: "Physics", color_dark: "#a8cbd0", color_light: "#437d84" },
   ri: { short_title: "RI", color_dark: "#f8b683", color_light: "#a95a22" },
   s3d: { short_title: "S3D", color_dark: "#e4a5ea", color_light: "#9b4e9f" },
+  "tepper-faculty": { short_title: "Tepper faculty", color_dark: "#d5b4f5", color_light: "#794caa" },
 });
+const SCHOOL_PRESENTATION = Object.freeze({
+  cfa: { color_dark: "#edb4da", color_light: "#99466f" },
+  dietrich: { color_dark: "#b8d8a0", color_light: "#5a8138" },
+  engineering: { color_dark: "#9acbfa", color_light: "#326da0" },
+  heinz: { color_dark: "#edb98d", color_light: "#9c612f" },
+  mcs: { color_dark: "#d4c0f1", color_light: "#765a9d" },
+  scs: { color_dark: "#9fd7d4", color_light: "#317d78" },
+  tepper: { color_dark: "#d5b4f5", color_light: "#794caa" },
+});
+const ACADEMIC_UNIT_TYPES = new Set(["department", "constituent_school", "institute"]);
+const ROSTER_CONTAINER_IDS = new Set(["heinz-faculty", "tepper-faculty"]);
+
+function academicHomeGroup(type, id) {
+  return type === "school" || type === "academic_area" ? `${type}:${id}` : id;
+}
+
+function academicHomePresentation(type, id, schoolId) {
+  if (type === "school") {
+    return { short_title: schoolId === "tepper" ? "Tepper" : schoolId === "heinz" ? "Heinz" : id,
+      ...(SCHOOL_PRESENTATION[schoolId] || SCHOOL_PRESENTATION.engineering) };
+  }
+  if (type === "academic_area") {
+    const hue = Math.floor(hashUnit(id, "academic-area-color") * 360);
+    return { short_title: id.replace(/^tepper:/, ""),
+      color_dark: `hsl(${hue} 62% 72%)`, color_light: `hsl(${hue} 63% 36%)` };
+  }
+  return DEPARTMENT_PRESENTATION[id] || {
+    short_title: id,
+    color_dark: "#73c5df",
+    color_light: "#197b99",
+  };
+}
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -143,25 +179,25 @@ function intersections(left, right) {
   return left.some((value) => rightSet.has(value));
 }
 
-function layoutGraph(nodes, edges, departments) {
+function layoutGraph(nodes, edges, academicHomes) {
   const connected = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
   const connectedNodes = nodes.filter((node) => connected.has(node.id));
   const nodeIndex = new Map(connectedNodes.map((node, index) => [node.id, index]));
   const departmentIndex = new Map(
-    departments.map((department, index) => [department.department_id, index]),
+    academicHomes.map((home, index) => [home.home_group || home.department_id, index]),
   );
   const departmentCenters = new Map(
-    departments.map((department, index) => {
-      const angle = -Math.PI / 2 + (index / Math.max(1, departments.length)) * Math.PI * 2;
+    academicHomes.map((home, index) => {
+      const angle = -Math.PI / 2 + (index / Math.max(1, academicHomes.length)) * Math.PI * 2;
       return [
-        department.department_id,
+        home.home_group || home.department_id,
         { x: Math.cos(angle) * 0.52, y: Math.sin(angle) * 0.42 },
       ];
     }),
   );
 
   const positions = connectedNodes.map((node) => {
-    const center = departmentCenters.get(node.primary_department) || { x: 0, y: 0 };
+    const center = departmentCenters.get(node.primary_home_group || node.primary_department) || { x: 0, y: 0 };
     const angle = hashUnit(node.id, "angle") * Math.PI * 2;
     const radius = 0.035 + hashUnit(node.id, "radius") * 0.16;
     return {
@@ -221,7 +257,7 @@ function layoutGraph(nodes, edges, departments) {
     for (let index = 0; index < connectedNodes.length; index += 1) {
       const node = connectedNodes[index];
       const position = positions[index];
-      const center = departmentCenters.get(node.primary_department) || { x: 0, y: 0 };
+      const center = departmentCenters.get(node.primary_home_group || node.primary_department) || { x: 0, y: 0 };
       const departmentPull = 0.0045 * alpha;
       const originPull = 0.0015 * alpha;
       fx[index] += (center.x - position.x) * departmentPull - position.x * originPull;
@@ -252,8 +288,8 @@ function layoutGraph(nodes, edges, departments) {
     .filter((node) => !connected.has(node.id))
     .sort(
       (left, right) =>
-        (departmentIndex.get(left.primary_department) || 0) -
-          (departmentIndex.get(right.primary_department) || 0) ||
+        (departmentIndex.get(left.primary_home_group || left.primary_department) || 0) -
+          (departmentIndex.get(right.primary_home_group || right.primary_department) || 0) ||
         left.name.localeCompare(right.name),
     );
   unconnected.forEach((node, index) => {
@@ -279,18 +315,20 @@ function deriveGraph(artifact, config, revision) {
   );
 
   const departments = artifact.catalogs.departments.map((department) => {
-    const presentation = DEPARTMENT_PRESENTATION[department.department_id] || {
-      short_title: department.title,
-      color_dark: "#73c5df",
-      color_light: "#197b99",
-    };
+    const id = String(department.department_id);
+    const unitType = String(department.unit_type || (ROSTER_CONTAINER_IDS.has(id)
+      ? "roster_container" : id === "cmu-silicon-valley" ? "campus" : "department"));
+    assert(ACADEMIC_UNIT_TYPES.has(unitType) || ["roster_container", "campus"].includes(unitType),
+      `Department ${id} has an invalid unit type`);
+    const presentation = academicHomePresentation(unitType, id, department.school_id);
     return {
-      department_id: String(department.department_id),
+      department_id: id,
       title: String(department.title),
-      short_title: presentation.short_title,
+      short_title: DEPARTMENT_PRESENTATION[id]?.short_title || String(department.title),
       directory_url: String(department.directory_url || ""),
       color_dark: presentation.color_dark,
       color_light: presentation.color_light,
+      unit_type: unitType,
       faculty_count: 0,
     };
   });
@@ -317,6 +355,30 @@ function deriveGraph(artifact, config, revision) {
     assert(schoolIds.has(schoolId), `Department ${department.department_id} has an invalid school`);
     department.school_id = schoolId;
   });
+  const academicHomeByGroup = new Map(departments
+    .filter((department) => ACADEMIC_UNIT_TYPES.has(department.unit_type))
+    .map((department) => [department.department_id, {
+      home_group: department.department_id,
+      home_type: department.unit_type,
+      home_id: department.department_id,
+      title: department.title,
+      short_title: department.short_title,
+      school_id: department.school_id,
+      color_dark: department.color_dark,
+      color_light: department.color_light,
+    }]));
+  for (const department of departments.filter((item) => item.unit_type === "roster_container")) {
+    const school = schoolById.get(department.school_id);
+    const group = academicHomeGroup("school", school.school_id);
+    if (academicHomeByGroup.has(group)) continue;
+    const presentation = academicHomePresentation("school", school.school_id, school.school_id);
+    academicHomeByGroup.set(group, {
+      home_group: group, home_type: "school", home_id: school.school_id,
+      title: school.title, short_title: presentation.short_title,
+      school_id: school.school_id,
+      color_dark: presentation.color_dark, color_light: presentation.color_light,
+    });
+  }
 
   const facultyIds = new Set();
   const facultyNodes = artifact.catalogs.faculty.map((person) => {
@@ -332,6 +394,65 @@ function deriveGraph(artifact, config, revision) {
       ),
     ];
     assert(personDepartments.length > 0, `Faculty ${id} has no included department`);
+    const academicMemberships = personDepartments.filter((departmentId) =>
+      ACADEMIC_UNIT_TYPES.has(departmentById.get(departmentId).unit_type));
+    // An explicit unresolved typed home is an editorial decision. For older
+    // artifacts, infer only a sole academic unit, never a roster container.
+    const hasTypedHome = Object.hasOwn(person, "primary_academic_home_type");
+    const hasPrimary = Object.hasOwn(person, "primary_department_id");
+    const legacyPrimaryId = hasPrimary ? String(person.primary_department_id || "").trim() : "";
+    const inferredId = !hasTypedHome && !hasPrimary && academicMemberships.length === 1
+      ? academicMemberships[0] : "";
+    const homeId = hasTypedHome ? String(person.primary_academic_home_id || "").trim()
+      : legacyPrimaryId || inferredId;
+    const homeType = hasTypedHome ? String(person.primary_academic_home_type || "unresolved").trim()
+      : homeId ? departmentById.get(homeId)?.unit_type || "department" : "unresolved";
+    assert(homeType === "unresolved" || ACADEMIC_UNIT_TYPES.has(homeType)
+      || ["academic_area", "school"].includes(homeType),
+    `Faculty ${id} has an invalid primary academic home type`);
+    assert((homeType === "unresolved") === !homeId,
+      `Faculty ${id} has an incomplete primary academic home`);
+    const homeSchoolId = hasTypedHome ? String(person.primary_academic_home_school_id || "").trim()
+      : homeId ? departmentById.get(homeId)?.school_id || "" : "";
+    const homeTitle = hasTypedHome ? String(person.primary_academic_home_title || "").trim()
+      : homeId ? departmentById.get(homeId)?.title || "" : "";
+    if (homeId) {
+      assert(schoolIds.has(homeSchoolId), `Faculty ${id} has an invalid primary home school`);
+      if (ACADEMIC_UNIT_TYPES.has(homeType)) {
+        assert(academicMemberships.includes(homeId)
+          && departmentById.get(homeId)?.unit_type === homeType,
+        `Faculty ${id} has a primary academic unit outside their memberships`);
+        assert(homeTitle === departmentById.get(homeId).title
+          && homeSchoolId === departmentById.get(homeId).school_id,
+        `Faculty ${id} has an inconsistent primary academic unit`);
+      } else if (homeType === "school") {
+        assert(homeId === homeSchoolId && schoolById.get(homeId)?.title === homeTitle
+          && personDepartments.some((departmentId) =>
+            departmentById.get(departmentId).school_id === homeId
+            && departmentById.get(departmentId).unit_type === "roster_container"),
+        `Faculty ${id} has an invalid school-level primary home`);
+      } else {
+        assert(/^tepper:[a-z0-9]+(?:-[a-z0-9]+)*$/.test(homeId)
+          && homeSchoolId === "tepper" && homeTitle
+          && personDepartments.includes("tepper-faculty"),
+        `Faculty ${id} has an invalid academic-area primary home`);
+      }
+    }
+    const primaryDepartment = homeType === "department" ? homeId : "";
+    assert(!legacyPrimaryId || (homeType === "department" && legacyPrimaryId === homeId),
+      `Faculty ${id} has a legacy primary department inconsistent with its typed home`);
+    const homeGroup = homeId ? academicHomeGroup(homeType, homeId) : "";
+    if (homeId && !academicHomeByGroup.has(homeGroup)) {
+      const presentation = academicHomePresentation(homeType, homeId, homeSchoolId);
+      academicHomeByGroup.set(homeGroup, {
+        home_group: homeGroup, home_type: homeType, home_id: homeId,
+        title: homeTitle, short_title: presentation.short_title,
+        school_id: homeSchoolId,
+        color_dark: presentation.color_dark, color_light: presentation.color_light,
+      });
+    }
+    assert(!homeId || academicHomeByGroup.get(homeGroup)?.title === homeTitle,
+      `Faculty ${id} has an inconsistent primary academic home title`);
     personDepartments.forEach((departmentId) => {
       departmentById.get(departmentId).faculty_count += 1;
     });
@@ -342,6 +463,8 @@ function deriveGraph(artifact, config, revision) {
       `Faculty ${id} has invalid school memberships`);
     assert(personDepartments.every((departmentId) => personSchools.includes(departmentById.get(departmentId).school_id)),
       `Faculty ${id} has a department outside their schools`);
+    assert(!homeSchoolId || personSchools.includes(homeSchoolId),
+      `Faculty ${id} has a primary home outside their schools`);
     personSchools.forEach((schoolId) => {
       schoolById.get(schoolId).faculty_count += 1;
     });
@@ -349,9 +472,27 @@ function deriveGraph(artifact, config, revision) {
       id,
       name: String(person.display_name || id),
       departments: personDepartments,
-      primary_department: personDepartments[0],
+      academic_departments: academicMemberships,
+      primary_department: primaryDepartment,
+      primary_academic_home_type: homeType,
+      primary_academic_home_id: homeId,
+      primary_academic_home_title: homeTitle,
+      primary_academic_home_school_id: homeSchoolId,
+      primary_academic_home_basis: homeId
+        ? String(hasTypedHome ? person.primary_academic_home_basis || ""
+          : person.primary_department_basis || (hasPrimary ? "" : "single_included_membership"))
+        : "unresolved",
+      primary_academic_home_source_url: homeId ? safeSourceUrl({
+        source_url: hasTypedHome ? person.primary_academic_home_source_url
+          : person.primary_department_source_url,
+      }) : "",
+      primary_academic_home_verified_at: homeId && hasTypedHome
+        ? String(person.primary_academic_home_verified_at || "") : "",
+      primary_home_group: homeGroup,
       school_ids: personSchools,
-      primary_school: personSchools[0],
+      primary_school: homeSchoolId
+        ? homeSchoolId
+        : personSchools.length === 1 ? personSchools[0] : "",
       roles: [...new Set(memberships.map((membership) => String(membership.role || "faculty")))],
       publication_count: Math.max(0, Number(person.publication_count) || 0),
       mapped_publication_count: 0,
@@ -381,7 +522,16 @@ function deriveGraph(artifact, config, revision) {
       kind: "external_coauthor",
       name,
       departments: [],
+      academic_departments: [],
       primary_department: "",
+      primary_academic_home_type: "unresolved",
+      primary_academic_home_id: "",
+      primary_academic_home_title: "",
+      primary_academic_home_school_id: "",
+      primary_academic_home_basis: "unresolved",
+      primary_academic_home_source_url: "",
+      primary_academic_home_verified_at: "",
+      primary_home_group: "",
       school_ids: [],
       primary_school: "",
       roles: [],
@@ -487,10 +637,13 @@ function deriveGraph(artifact, config, revision) {
           edgeMap.set(key, {
             source,
             target,
-            cross_department: bothFaculty && !intersections(
-              nodeById.get(source).departments,
-              nodeById.get(target).departments,
-            ),
+            cross_department: bothFaculty
+              && nodeById.get(source).academic_departments.length > 0
+              && nodeById.get(target).academic_departments.length > 0
+              && !intersections(
+                nodeById.get(source).academic_departments,
+                nodeById.get(target).academic_departments,
+              ),
             cross_school: bothFaculty && !intersections(
               nodeById.get(source).school_ids,
               nodeById.get(target).school_ids,
@@ -533,10 +686,11 @@ function deriveGraph(artifact, config, revision) {
   nodes.forEach((node) => {
     node.collaborator_count = collaborators.get(node.id).size;
   });
+  const academicHomes = [...academicHomeByGroup.values()];
   layoutGraph(
     nodes,
     edges.map((edge) => ({ ...edge, weight: edge.works.length })),
-    departments,
+    academicHomes,
   );
 
   const datedYears = artifact.points
@@ -589,6 +743,7 @@ function deriveGraph(artifact, config, revision) {
       missing_count: missingYearCount,
     },
     departments,
+    academic_homes: academicHomes,
     schools,
     nodes: nodes.sort((left, right) => left.name.localeCompare(right.name)),
     edges,

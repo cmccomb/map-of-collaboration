@@ -8,6 +8,12 @@
   const GRAPH_SCHEMA_VERSION = 1;
   const SAFE_PROTOCOLS = new Set(["https:", "http:"]);
   const EXTERNAL_LAYOUT_GROUP = "__external_coauthors__";
+  const UNRESOLVED_LAYOUT_GROUP = "__primary_unresolved__";
+  const ACADEMIC_UNIT_TYPES = new Set(["department", "constituent_school", "institute"]);
+
+  function academicHomeGroup(type, id) {
+    return type === "school" || type === "academic_area" ? `${type}:${id}` : id;
+  }
 
   function assert(condition, message) {
     if (!condition) throw new Error(message);
@@ -68,6 +74,8 @@
         title: String(department.title || id),
         short_title: String(department.short_title || department.title || id),
         school_id: String(department.school_id || "engineering"),
+        unit_type: String(department.unit_type || (["heinz-faculty", "tepper-faculty"].includes(id)
+          ? "roster_container" : id === "cmu-silicon-valley" ? "campus" : "department")),
         directory_url: safeExternalUrl(department.directory_url),
         color_dark: String(department.color_dark || "#73c5df"),
         color_light: String(department.color_light || "#197b99"),
@@ -93,6 +101,54 @@
     assert(schools.length > 0, "Graph artifact is missing schools");
     assert(departments.every((department) => schoolIds.has(department.school_id)),
       "Graph artifact has a department with an invalid school");
+    const departmentById = new Map(departments.map((department) =>
+      [department.department_id, department]));
+    const sourceHomes = Array.isArray(input.academic_homes)
+      ? input.academic_homes
+      : departments.filter((department) => ACADEMIC_UNIT_TYPES.has(department.unit_type))
+        .map((department) => ({
+          home_group: department.department_id,
+          home_type: department.unit_type,
+          home_id: department.department_id,
+          title: department.title,
+          short_title: department.short_title,
+          school_id: department.school_id,
+          color_dark: department.color_dark,
+          color_light: department.color_light,
+        }));
+    const academicHomes = sourceHomes.map((home) => {
+      const type = String(home.home_type || "");
+      const id = String(home.home_id || "");
+      const group = academicHomeGroup(type, id);
+      assert(id && group === String(home.home_group || ""),
+        `Invalid primary academic home group: ${group}`);
+      assert(ACADEMIC_UNIT_TYPES.has(type) || ["academic_area", "school"].includes(type),
+        `Invalid primary academic home type: ${type}`);
+      const schoolId = String(home.school_id || "");
+      assert(schoolIds.has(schoolId), `Primary home ${group} has an invalid school`);
+      if (ACADEMIC_UNIT_TYPES.has(type)) {
+        assert(departmentById.get(id)?.unit_type === type
+          && departmentById.get(id)?.school_id === schoolId,
+        `Primary home ${group} is not a matching academic unit`);
+      } else if (type === "school") {
+        assert(id === schoolId, `Primary school home ${group} has a mismatched school`);
+      } else {
+        assert(/^tepper:[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) && schoolId === "tepper",
+          `Invalid academic area ${group}`);
+      }
+      return {
+        home_group: group, home_type: type, home_id: id,
+        title: String(home.title || id),
+        short_title: String(home.short_title || home.title || id),
+        school_id: schoolId,
+        color_dark: String(home.color_dark || "#73c5df"),
+        color_light: String(home.color_light || "#197b99"),
+      };
+    });
+    const academicHomeByGroup = new Map(academicHomes.map((home) =>
+      [home.home_group, home]));
+    assert(academicHomeByGroup.size === academicHomes.length,
+      "Graph artifact has duplicate primary academic home groups");
 
     const nodeIds = new Set();
     const nodes = input.nodes.map((node) => {
@@ -105,6 +161,8 @@
       const departmentsForNode = uniqueStrings(node.departments).filter((item) =>
         departmentIds.has(item),
       );
+      const academicDepartments = departmentsForNode.filter((item) =>
+        ACADEMIC_UNIT_TYPES.has(departmentById.get(item).unit_type));
       assert(kind === "external_coauthor" ? uniqueStrings(node.departments).length === 0 : departmentsForNode.length > 0,
         kind === "external_coauthor"
           ? `External coauthor ${id} must not have a CMU department`
@@ -118,23 +176,68 @@
       kind === "external_coauthor"
         ? `External coauthor ${id} must not have a CMU school`
         : `Faculty ${id} has invalid school memberships`);
+      const hasTypedHome = Object.hasOwn(node, "primary_academic_home_type");
+      const legacyPrimary = kind === "external_coauthor" ? ""
+        : String(node.primary_department || "").trim();
+      const homeType = kind === "external_coauthor" ? "unresolved"
+        : hasTypedHome ? String(node.primary_academic_home_type || "unresolved")
+          : legacyPrimary ? "department" : "unresolved";
+      const homeId = kind === "external_coauthor" ? ""
+        : hasTypedHome ? String(node.primary_academic_home_id || "").trim() : legacyPrimary;
+      const homeGroup = homeId ? academicHomeGroup(homeType, homeId) : "";
+      assert((homeType === "unresolved") === !homeId,
+        `Faculty ${id} has an incomplete primary academic home`);
+      const home = homeId ? academicHomeByGroup.get(homeGroup) : null;
+      assert(!homeId || home?.home_type === homeType,
+        `Faculty ${id} has an unknown primary academic home`);
+      assert(!hasTypedHome || !home || (
+        String(node.primary_academic_home_title || "") === home.title
+        && String(node.primary_academic_home_school_id || "") === home.school_id
+      ), `Faculty ${id} has inconsistent primary academic home details`);
+      if (ACADEMIC_UNIT_TYPES.has(homeType)) {
+        assert(academicDepartments.includes(homeId),
+          `Faculty ${id} has a primary academic unit outside their memberships`);
+      } else if (homeType === "school") {
+        assert(departmentsForNode.some((departmentId) =>
+          departmentById.get(departmentId).school_id === homeId
+          && departmentById.get(departmentId).unit_type === "roster_container"),
+        `Faculty ${id} has a school home without its roster membership`);
+      } else if (homeType === "academic_area") {
+        assert(departmentsForNode.includes("tepper-faculty"),
+          `Faculty ${id} has an academic area without Tepper membership`);
+      }
+      const primaryDepartment = homeType === "department" ? homeId : "";
+      assert(!legacyPrimary || legacyPrimary === primaryDepartment,
+        `Faculty ${id} has a legacy primary department inconsistent with its typed home`);
+      const primarySchool = home
+        ? home.school_id
+        : schoolsForNode.length === 1 ? schoolsForNode[0] : "";
+      assert(!primarySchool || schoolsForNode.includes(primarySchool),
+        `Faculty ${id} has a primary school outside their memberships`);
       assert(Number.isFinite(node.x) && Number.isFinite(node.y), `Faculty ${id} has no position`);
       return {
         id,
         kind,
         name: String(node.name || id),
         departments: departmentsForNode,
-        primary_department: kind === "external_coauthor"
-          ? ""
-          : departmentIds.has(node.primary_department)
-            ? node.primary_department
-            : departmentsForNode[0],
+        academic_departments: academicDepartments,
+        primary_department: primaryDepartment,
+        primary_academic_home_type: homeType,
+        primary_academic_home_id: homeId,
+        primary_academic_home_title: home
+          ? String(node.primary_academic_home_title || home.title) : "",
+        primary_academic_home_school_id: home?.school_id || "",
+        primary_academic_home_basis: home
+          ? String(node.primary_academic_home_basis || node.primary_department_basis || "")
+          : "unresolved",
+        primary_academic_home_source_url: home
+          ? safeExternalUrl(node.primary_academic_home_source_url || node.primary_department_source_url)
+          : "",
+        primary_academic_home_verified_at: home
+          ? String(node.primary_academic_home_verified_at || "") : "",
+        primary_home_group: homeGroup,
         school_ids: schoolsForNode,
-        primary_school: kind === "external_coauthor"
-          ? ""
-          : schoolIds.has(node.primary_school)
-            ? node.primary_school
-            : schoolsForNode[0],
+        primary_school: primarySchool,
         roles: uniqueStrings(node.roles),
         publication_count: Math.max(0, integer(node.publication_count)),
         mapped_publication_count: Math.max(0, integer(node.mapped_publication_count)),
@@ -215,6 +318,7 @@
         missing_count: Math.max(0, integer(years.missing_count)),
       },
       departments,
+      academic_homes: academicHomes,
       schools,
       nodes,
       edges,
@@ -222,6 +326,7 @@
       departmentById: new Map(
         departments.map((department) => [department.department_id, department]),
       ),
+      academicHomeByGroup,
       schoolById: new Map(schools.map((school) => [school.school_id, school])),
       edgeById: new Map(edges.map((edge) => [edge.id, edge])),
     };
@@ -256,7 +361,8 @@
   }
 
   function layoutGroup(node) {
-    return node.kind === "external_coauthor" ? EXTERNAL_LAYOUT_GROUP : node.primary_department;
+    return node.kind === "external_coauthor" ? EXTERNAL_LAYOUT_GROUP
+      : node.primary_home_group || node.primary_department || UNRESOLVED_LAYOUT_GROUP;
   }
 
   function hasSchoolFocus(state) {
@@ -521,11 +627,12 @@
 
   function facultyLabelEligible(node, selectedDepartmentIds = []) {
     if (node?.kind === "external_coauthor") return true;
-    const departments = uniqueStrings(node?.departments);
     const selectedDepartments = new Set(uniqueStrings(selectedDepartmentIds));
-    if (!selectedDepartments.size) return departments.length === 1;
-    const primaryDepartment = String(node?.primary_department || departments[0] || "").trim();
-    return selectedDepartments.has(primaryDepartment);
+    const primaryGroup = String(node?.primary_home_group || node?.primary_department || "").trim();
+    if (!selectedDepartments.size) return Boolean(primaryGroup);
+    if (selectedDepartments.has(primaryGroup)) return true;
+    return ["school", "academic_area"].includes(node?.primary_academic_home_type)
+      && uniqueStrings(node?.departments).some((id) => selectedDepartments.has(id));
   }
 
   function departmentLabelEligible(departmentId, selectedDepartmentIds = []) {
@@ -538,55 +645,39 @@
 
   function layoutDepartmentId(node, selectedDepartmentIds = [], graph = null, selectedSchoolIds = []) {
     if (node?.kind === "external_coauthor") return layoutGroup(node);
+    const primaryGroup = String(node?.primary_home_group || node?.primary_department || "").trim();
+    if (!primaryGroup) return UNRESOLVED_LAYOUT_GROUP;
     const departments = uniqueStrings(node?.departments);
     const selectedSchools = new Set(selectedSchoolIds);
     const inSelectedSchools = selectedSchools.size && graph
       ? departments.filter((id) => selectedSchools.has(graph.departmentById.get(id)?.school_id))
       : departments;
     const choices = inSelectedSchools.length ? inSelectedSchools : departments;
-    const primaryDepartment = String(node?.primary_department || departments[0] || "").trim();
     const selectedDepartments = new Set(uniqueStrings(selectedDepartmentIds));
-    if (choices.includes(primaryDepartment)
-      && (!selectedDepartments.size || selectedDepartments.has(primaryDepartment))) {
-      return primaryDepartment;
+    const primarySchool = node.primary_academic_home_school_id || node.primary_school;
+    if ((!selectedSchools.size || selectedSchools.has(primarySchool))
+      && (!selectedDepartments.size || selectedDepartments.has(primaryGroup)
+        || (node.primary_academic_home_type === "school" || node.primary_academic_home_type === "academic_area")
+          && choices.some((id) => selectedDepartments.has(id)))) {
+      return primaryGroup;
     }
     return (
-      choices.find((departmentId) => selectedDepartments.has(departmentId)) ||
-      choices[0] || primaryDepartment
+      choices.find((departmentId) => selectedDepartments.has(departmentId)
+        && graph?.departmentById.get(departmentId)?.unit_type !== "roster_container") ||
+      choices.find((departmentId) => graph?.departmentById.get(departmentId)?.unit_type !== "roster_container") ||
+      (selectedSchools.size && choices.length === 1
+        ? academicHomeGroup("school", graph?.departmentById.get(choices[0])?.school_id || "") : "") ||
+      primaryGroup
     );
   }
 
   function forceDepartmentAssignments(
-    filtered, graph, schoolSpacing = 0, selectedDepartmentIds = [], selectedSchoolIds = [],
+    filtered, graph, _schoolSpacing = 0, selectedDepartmentIds = [], selectedSchoolIds = [],
   ) {
-    const exclusiveSchoolCounts = new Map(graph.schools.map((school) => [school.school_id, 0]));
-    for (const node of filtered.nodes) {
-      if (node.school_ids?.length === 1) {
-        const schoolId = node.school_ids[0];
-        exclusiveSchoolCounts.set(schoolId, (exclusiveSchoolCounts.get(schoolId) || 0) + 1);
-      }
-    }
-    return new Map(filtered.nodes.map((node) => {
-      // A joint appointment needs one display group in the whole-CMU view.
-      // Assign it to the school with fewer exclusive visible colleagues.
-      const primarySchool = graph.departmentById.get(node.primary_department)?.school_id || "";
-      const preferredSchool = !selectedDepartmentIds.length && !selectedSchoolIds.length
-        && schoolSpacing > 0 && node.school_ids?.length > 1
-        ? [...node.school_ids].sort((left, right) =>
-          (exclusiveSchoolCounts.get(left) || 0) - (exclusiveSchoolCounts.get(right) || 0)
-          || Number(left === primarySchool) - Number(right === primarySchool)
-          || left.localeCompare(right))[0]
-        : "";
-      return [
-        node.id,
-        layoutDepartmentId(
-          node,
-          selectedDepartmentIds,
-          graph,
-          preferredSchool ? [preferredSchool] : selectedSchoolIds,
-        ),
-      ];
-    }));
+    return new Map(filtered.nodes.map((node) => [
+      node.id,
+      layoutDepartmentId(node, selectedDepartmentIds, graph, selectedSchoolIds),
+    ]));
   }
 
   function connectionsForNode(filtered, nodeId) {
@@ -708,7 +799,7 @@
     const schoolOpenness = departmentSeparation(schoolSpacing);
     const nodeIndex = new Map(nodes.map((node, index) => [node.id, index]));
     const nodeDepartments = nodes.map(
-      (node) => departmentByNode.get(node.id) || node.primary_department,
+      (node) => departmentByNode.get(node.id) || node.primary_home_group || node.primary_department,
     );
     const crossSchoolPairs = schoolOpenness > 0
       ? new Uint8Array(nodes.length * nodes.length)
@@ -903,11 +994,11 @@
       groups.get(departmentId).push(node);
     }
     const activeDepartmentIds = [
-      ...graph.departments
-        .map((department) => department.department_id)
+      ...graph.academic_homes
+        .map((home) => home.home_group)
         .filter((id) => groups.has(id)),
       ...[...groups.keys()]
-        .filter((id) => !graph.departmentById.has(id))
+        .filter((id) => !graph.academicHomeByGroup.has(id))
         .sort((left, right) => left.localeCompare(right)),
     ];
     const departmentRank = new Map(activeDepartmentIds.map((id, index) => [id, index]));
@@ -1015,7 +1106,8 @@
     );
     const schoolByNode = new Map(
       filtered.nodes.map((node) => [
-        node.id, graph.departmentById.get(departmentByNode.get(node.id))?.school_id || "",
+        node.id, graph.academicHomeByGroup.get(departmentByNode.get(node.id))?.school_id
+          || graph.departmentById.get(departmentByNode.get(node.id))?.school_id || "",
       ]),
     );
     const nodesByDepartment = new Map();
@@ -1054,7 +1146,8 @@
     }));
     const departmentAnchors = new Map(
       [...gridCenters].map(([departmentId, center]) => {
-        const schoolId = graph.departmentById.get(departmentId)?.school_id;
+        const schoolId = graph.academicHomeByGroup.get(departmentId)?.school_id
+          || graph.departmentById.get(departmentId)?.school_id;
         const schoolAnchor = schoolAnchors.get(schoolId) || { x: 0, y: 0 };
         return [departmentId, {
           x: schoolAnchor.x + center.x * anchorScale,
@@ -1192,6 +1285,7 @@
 
   return Object.freeze({
     GRAPH_SCHEMA_VERSION,
+    UNRESOLVED_LAYOUT_GROUP,
     collaborationLayout,
     connectionsForNode,
     defaultState,

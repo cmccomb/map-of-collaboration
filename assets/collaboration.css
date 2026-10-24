@@ -38,6 +38,7 @@
   --error: #ff9caa;
   --warning: #e8c98e;
   --accent: #73c5df;
+  --primary-unresolved: #a7b2bc;
   --accent-strong: #a3dcec;
   --warm: #ffbd68;
   --focus: #8fe6ff;
@@ -83,6 +84,7 @@
   --error: #9c233c;
   --warning: #795715;
   --accent: #197b99;
+  --primary-unresolved: #52636f;
   --accent-strong: #075f7a;
   --warm: #9c6114;
   --focus: #007a9d;
@@ -990,7 +992,8 @@ input[type="number"]:focus {
   white-space: nowrap;
 }
 
-.external-legend {
+.external-legend,
+.affiliation-legend {
   display: flex;
   grid-column: 1 / -1;
   gap: 0.4rem;
@@ -1052,6 +1055,17 @@ input[type="number"]:focus {
   display: flex;
   flex-wrap: wrap;
   gap: 0.28rem;
+}
+
+.detail-primary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1.4;
+}
+
+.detail-primary a {
+  color: var(--accent);
 }
 
 .department-chip {
