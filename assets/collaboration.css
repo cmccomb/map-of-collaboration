@@ -234,7 +234,8 @@ h1 {
 .department-fieldset,
 .year-filter-fieldset,
 .strength-fieldset,
-.display-fieldset {
+.display-fieldset,
+.layout-fieldset {
   margin: 0;
   padding: 0;
   border: 0;
@@ -245,7 +246,8 @@ h1 {
 .department-fieldset > legend,
 .year-filter-fieldset > legend,
 .strength-fieldset > legend,
-.display-fieldset > legend {
+.display-fieldset > legend,
+.layout-fieldset > legend {
   display: block;
   margin: 0 0 0.42rem;
   color: var(--label);
@@ -270,6 +272,7 @@ h1 {
 }
 
 .theme-control input,
+.layout-options input,
 .department-option input {
   position: absolute;
   opacity: 0;
@@ -412,13 +415,97 @@ input[type="number"]:focus {
   font-size: 0.72rem;
 }
 
+.selected-faculty {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.42rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.selected-faculty li {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  border: 1px solid var(--control-active-line);
+  border-radius: 999px;
+  background: var(--control-active);
+  color: var(--text);
+  font-size: 0.62rem;
+}
+
+.selected-faculty li > span {
+  max-width: 12.5rem;
+  padding: 0.28rem 0.12rem 0.28rem 0.48rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-faculty button {
+  align-self: stretch;
+  min-width: 1.65rem;
+  padding: 0 0.38rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.selected-faculty button:hover {
+  background: var(--control-hover);
+  color: var(--text);
+}
+
 .faculty-field + .department-fieldset,
 .department-fieldset + .year-filter-fieldset,
 .year-filter-fieldset + .strength-fieldset,
-.strength-fieldset + .display-fieldset {
+.strength-fieldset + .display-fieldset,
+.display-fieldset + .layout-fieldset {
   margin-top: 0.8rem;
   padding-top: 0.8rem;
   border-top: 1px solid var(--line);
+}
+
+.layout-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  padding: 0.14rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.48rem;
+  background: var(--input);
+}
+
+.layout-options label {
+  position: relative;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.layout-options span {
+  display: grid;
+  min-height: 1.85rem;
+  padding: 0.3rem 0.4rem;
+  place-items: center;
+  border-radius: 0.32rem;
+  color: var(--muted);
+  font-size: 0.65rem;
+  font-weight: 680;
+}
+
+.layout-options input:checked + span {
+  background: var(--control-active);
+  color: var(--text);
+  box-shadow: 0 0 0 1px var(--control-active-line);
+}
+
+.layout-options input:focus-visible + span {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 .department-options {
@@ -930,6 +1017,38 @@ input[type="number"]:focus {
   font-size: 0.62rem;
   font-weight: 680;
   text-decoration: none;
+}
+
+.detail-selection-list {
+  display: grid;
+  gap: 0.28rem;
+  margin: 0.2rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.detail-selection-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.4rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.28rem 0;
+  color: var(--muted);
+}
+
+.detail-selection-list strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.64rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail-selection-list small {
+  color: var(--quiet);
+  font-size: 0.54rem;
+  text-align: right;
 }
 
 .detail-metrics {

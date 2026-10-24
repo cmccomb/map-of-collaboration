@@ -121,7 +121,7 @@
 
           <div class="faculty-field">
             <label class="field" for="faculty-search">
-              <span>Find a faculty member</span>
+              <span>Add faculty</span>
               <input
                 id="faculty-search"
                 type="search"
@@ -129,6 +129,7 @@
                 aria-autocomplete="list"
                 aria-controls="faculty-suggestions"
                 aria-expanded="false"
+                aria-describedby="faculty-search-note"
                 autocomplete="off"
                 placeholder="Search 312 faculty"
               />
@@ -139,6 +140,16 @@
               role="listbox"
               hidden
             ></ul>
+            <ul
+              id="selected-faculty"
+              class="selected-faculty"
+              aria-label="Selected faculty"
+              aria-live="polite"
+              hidden
+            ></ul>
+            <p id="faculty-search-note" class="field-note">
+              Search to add any number; select a graph node to add or remove it.
+            </p>
           </div>
 
           <fieldset class="department-fieldset">
@@ -198,6 +209,28 @@
             </label>
           </fieldset>
 
+          <fieldset class="layout-fieldset">
+            <legend>Relayout network</legend>
+            <div id="layout-options" class="layout-options">
+              <label>
+                <input
+                  type="radio"
+                  name="graph-layout"
+                  value="collaboration"
+                  checked
+                />
+                <span>Collaboration</span>
+              </label>
+              <label>
+                <input type="radio" name="graph-layout" value="departments" />
+                <span>Departments</span>
+              </label>
+            </div>
+            <p class="field-note">
+              Separate affiliations so cross-department links span the open center.
+            </p>
+          </fieldset>
+
           <div class="filter-actions">
             <button id="fit-graph" class="primary-button" type="button">
               Fit visible graph
@@ -235,9 +268,10 @@
           aria-describedby="canvas-instructions"
         ></canvas>
         <p id="canvas-instructions" class="sr-only">
-          Drag to pan, use the mouse wheel or zoom buttons to zoom, and select a
-          faculty node to inspect its observed collaborators. Use faculty search
-          for a keyboard-accessible route to every person.
+          Drag to pan, use the mouse wheel or zoom buttons to zoom, and select
+          faculty nodes to compare their observed collaborators. Select a node
+          again to remove it. Use faculty search for a keyboard-accessible route
+          to every person.
         </p>
         <div id="loading-state" class="loading-state" aria-hidden="true">
           <span class="loading-mark"></span>
@@ -271,8 +305,8 @@
       >
         <div class="detail-empty">
           <p class="eyebrow">Faculty details</p>
-          <h2>Select a node</h2>
-          <p>Choose a faculty member to inspect collaborators and shared works.</p>
+          <h2>Select faculty</h2>
+          <p>Choose one or more faculty members to inspect collaborators and shared works.</p>
         </div>
         <div id="detail-content" hidden></div>
       </aside>

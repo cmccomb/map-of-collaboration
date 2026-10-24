@@ -22,6 +22,7 @@
     departmentLegend: document.querySelector("#department-legend"),
     facultySearch: document.querySelector("#faculty-search"),
     facultySuggestions: document.querySelector("#faculty-suggestions"),
+    selectedFaculty: document.querySelector("#selected-faculty"),
     yearMin: document.querySelector("#year-min"),
     yearMax: document.querySelector("#year-max"),
     undatedNote: document.querySelector("#undated-note"),
@@ -29,6 +30,7 @@
     strengthOutput: document.querySelector("#strength-output"),
     crossDepartment: document.querySelector("#cross-department"),
     showUnconnected: document.querySelector("#show-unconnected"),
+    layoutOptions: document.querySelector("#layout-options"),
     coverageNote: document.querySelector("#coverage-note"),
     retry: document.querySelector("#retry-load"),
     clear: document.querySelector("#clear-filters"),
@@ -150,7 +152,7 @@
         "cataloged faculty member",
       )} do not. ${state.graph.quality.coverage_note || ""}`;
       setLoading(false);
-      if (state.view.selectedId) focusSelected();
+      if (state.view.selectedIds.length) focusSelection();
     } catch (error) {
       console.error(error);
       elements.status.className = "status error";
@@ -221,6 +223,10 @@
     }`;
     elements.crossDepartment.checked = view.crossDepartment;
     elements.showUnconnected.checked = view.showUnconnected;
+    elements.layoutOptions.querySelectorAll("input").forEach((input) => {
+      input.checked = input.value === view.layout;
+    });
+    renderSelectedFaculty();
   }
 
   function applyView({ fit = false, updateUrl = true, animate = false } = {}) {
@@ -246,7 +252,16 @@
       elements.stats.textContent = "";
       return;
     }
-    const suffix = state.view.crossDepartment ? " · cross-department" : "";
+    const suffix = [
+      state.view.crossDepartment ? "cross-department" : "",
+      state.view.layout === "departments" ? "department clusters" : "",
+      state.view.selectedIds.length
+        ? `${plural(state.view.selectedIds.length, "faculty member")} selected`
+        : "",
+    ]
+      .filter(Boolean)
+      .map((value) => ` · ${value}`)
+      .join("");
     elements.stats.textContent = `${plural(filtered.nodes.length, "faculty member")} · ${plural(
       filtered.edges.length,
       "connection",
@@ -370,21 +385,16 @@
     fitNodes(state.filtered?.nodes || [], { animate });
   }
 
-  function focusSelected({ animate = false } = {}) {
-    const selectedId = state.view.selectedId;
-    if (!selectedId) return;
-    const selected = state.filtered.nodeById.get(selectedId) || state.graph.nodeById.get(selectedId);
-    if (!selected) return;
-    const connections = core.connectionsForNode(state.filtered, selectedId);
-    const positions = core.selectionLayout(state.filtered, selectedId);
-    const nodes = [
-      selected,
-      ...connections
-        .map((connection) => state.filtered.nodeById.get(connection.collaboratorId))
-        .filter(Boolean),
-    ];
-    fitNodes(nodes, {
-      maximumScale: connections.length ? 560 : 420,
+  function focusSelection({ animate = false } = {}) {
+    const selectedIds = state.view.selectedIds;
+    if (!selectedIds.length) return;
+    const selection = core.subgraphForSelection(state.filtered, selectedIds);
+    const positions =
+      state.view.layout === "departments"
+        ? core.departmentLayout(selection, state.graph)
+        : core.selectionLayout(state.filtered, selectedIds);
+    fitNodes(selection.nodes, {
+      maximumScale: selection.edges.length ? 560 : 420,
       positions,
       animate,
     });
@@ -417,9 +427,12 @@
   }
 
   function refitCurrent({ animate = false } = {}) {
-    if (state.view?.selectedId) focusSelected({ animate });
+    if (state.view?.selectedIds.length) focusSelection({ animate });
     else {
-      const positions = spreadOverviewLayout(core.collaborationLayout(state.filtered));
+      const positions =
+        state.view.layout === "departments"
+          ? core.departmentLayout(state.filtered, state.graph)
+          : spreadOverviewLayout(core.collaborationLayout(state.filtered));
       fitNodes(state.filtered?.nodes || [], {
         positions,
         animate,
@@ -500,13 +513,15 @@
     const transform = displayTransform(now);
     drawGrid(transform);
     if (!state.filtered) return;
-    const selectedId = state.view.selectedId;
-    const emphasisId = selectedId || state.hoveredId;
-    const neighborIds = new Set([emphasisId]);
-    if (emphasisId) {
+    const selectedIds = new Set(state.view.selectedIds);
+    const emphasisIds = selectedIds.size
+      ? selectedIds
+      : new Set(state.hoveredId ? [state.hoveredId] : []);
+    const neighborIds = new Set(emphasisIds);
+    if (emphasisIds.size) {
       for (const edge of state.filtered.edges) {
-        if (edge.source === emphasisId) neighborIds.add(edge.target);
-        if (edge.target === emphasisId) neighborIds.add(edge.source);
+        if (emphasisIds.has(edge.source)) neighborIds.add(edge.target);
+        if (emphasisIds.has(edge.target)) neighborIds.add(edge.source);
       }
     }
     context.lineCap = "round";
@@ -517,10 +532,11 @@
       const sourcePoint = worldToScreen(source, now, transform);
       const targetPoint = worldToScreen(target, now, transform);
       const highlighted =
-        !emphasisId || edge.source === emphasisId || edge.target === emphasisId;
+        !emphasisIds.size || emphasisIds.has(edge.source) || emphasisIds.has(edge.target);
       const ratio = Math.log1p(edge.count) / Math.log1p(state.filtered.maximumEdgeCount);
-      context.globalAlpha = emphasisId ? (highlighted ? 0.9 : 0.075) : 0.35 + ratio * 0.28;
-      context.strokeStyle = highlighted && emphasisId ? css("--accent") : css("--canvas-edge-strong");
+      context.globalAlpha = emphasisIds.size ? (highlighted ? 0.9 : 0.075) : 0.35 + ratio * 0.28;
+      context.strokeStyle =
+        highlighted && emphasisIds.size ? css("--accent") : css("--canvas-edge-strong");
       context.lineWidth = 0.65 + Math.pow(ratio, 1.65) * 7;
       context.beginPath();
       context.moveTo(sourcePoint.x, sourcePoint.y);
@@ -532,15 +548,16 @@
       .filter((node) => node.degree > 0)
       .sort((left, right) => right.strength - left.strength || right.degree - left.degree);
     let labelIds;
-    if (selectedId) {
+    if (selectedIds.size) {
       const compact = window.matchMedia("(max-width: 820px)").matches;
-      const connections = core.connectionsForNode(state.filtered, selectedId);
-      labelIds = new Set([
-        selectedId,
-        ...connections
-          .slice(0, compact ? 8 : connections.length)
-          .map((connection) => connection.collaboratorId),
-      ]);
+      const selection = core.subgraphForSelection(state.filtered, [...selectedIds]);
+      const neighborLimit = Math.max(0, (compact ? 8 : 20) - selectedIds.size);
+      const neighbors = selection.nodes
+        .filter((node) => !selectedIds.has(node.id))
+        .sort((left, right) => right.strength - left.strength || right.degree - left.degree)
+        .slice(0, neighborLimit)
+        .map((node) => node.id);
+      labelIds = new Set([...selectedIds, ...neighbors]);
     } else {
       const viewport = effectiveViewport();
       const viewportArea =
@@ -574,7 +591,7 @@
         continue;
       }
       const radius = nodeRadius(node);
-      const related = !emphasisId || neighborIds.has(node.id);
+      const related = !emphasisIds.size || neighborIds.has(node.id);
       context.globalAlpha = related ? (node.degree ? 0.94 : 0.42) : 0.13;
       context.fillStyle = node.degree
         ? departmentColor(node.primary_department)
@@ -582,9 +599,9 @@
       context.beginPath();
       context.arc(point.x, point.y, radius, 0, Math.PI * 2);
       context.fill();
-      context.lineWidth = node.id === selectedId ? 2.4 : node.id === state.hoveredId ? 1.7 : 0.8;
+      context.lineWidth = selectedIds.has(node.id) ? 2.4 : node.id === state.hoveredId ? 1.7 : 0.8;
       context.strokeStyle =
-        node.id === selectedId || node.id === state.hoveredId
+        selectedIds.has(node.id) || node.id === state.hoveredId
           ? css("--canvas-selected")
           : colorWithAlpha(css("--canvas-selected"), 0.45);
       context.stroke();
@@ -592,23 +609,97 @@
     context.globalAlpha = 1;
 
     const occupied = [];
+    if (state.view.layout === "departments" && !selectedIds.size) {
+      drawDepartmentLabels(occupied, now, transform);
+    }
     const nodesForLabels = state.filtered.nodes
       .filter((node) => labelIds.has(node.id))
       .sort((left, right) => {
-        const leftPriority = left.id === selectedId ? 2 : left.id === state.hoveredId ? 1 : 0;
-        const rightPriority = right.id === selectedId ? 2 : right.id === state.hoveredId ? 1 : 0;
+        const leftPriority = selectedIds.has(left.id) ? 2 : left.id === state.hoveredId ? 1 : 0;
+        const rightPriority = selectedIds.has(right.id) ? 2 : right.id === state.hoveredId ? 1 : 0;
         return rightPriority - leftPriority || right.strength - left.strength;
       });
     for (const node of nodesForLabels) {
       drawNodeLabel(
         node,
         occupied,
-        node.id === selectedId || node.id === state.hoveredId,
+        selectedIds.has(node.id) || node.id === state.hoveredId,
         now,
         transform,
       );
     }
     if (state.transition) requestRender();
+  }
+
+  function drawDepartmentLabels(occupied, now, transform) {
+    const groups = new Map();
+    for (const node of state.filtered.nodes) {
+      if (!groups.has(node.primary_department)) groups.set(node.primary_department, []);
+      groups.get(node.primary_department).push(node);
+    }
+    const viewport = effectiveViewport();
+    const origin = { x: transform.x, y: transform.y };
+    context.font = "700 11px Inter, ui-sans-serif, system-ui, sans-serif";
+
+    for (const department of state.graph.departments) {
+      const nodes = groups.get(department.department_id);
+      if (!nodes?.length) continue;
+      const points = nodes.map((node) => worldToScreen(node, now, transform));
+      const center = {
+        x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+        y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+      };
+      const length = Math.hypot(center.x - origin.x, center.y - origin.y);
+      const direction =
+        length > 1
+          ? { x: (center.x - origin.x) / length, y: (center.y - origin.y) / length }
+          : { x: 0, y: -1 };
+      const extent = Math.max(
+        0,
+        ...points.map(
+          (point) =>
+            (point.x - center.x) * direction.x + (point.y - center.y) * direction.y,
+        ),
+      );
+      const text = department.short_title;
+      const width = Math.min(
+        Math.ceil(context.measureText(text).width) + 18,
+        Math.max(72, viewport.right - viewport.left - 12),
+      );
+      const height = 23;
+      const anchor = {
+        x: center.x + direction.x * (extent + 24),
+        y: center.y + direction.y * (extent + 24),
+      };
+      const rect = {
+        x: Math.max(viewport.left + 6, Math.min(viewport.right - width - 6, anchor.x - width / 2)),
+        y: Math.max(viewport.top + 6, Math.min(viewport.bottom - height - 6, anchor.y - height / 2)),
+        width,
+        height,
+      };
+      const overlaps = occupied.some(
+        (other) =>
+          rect.x < other.x + other.width + 4 &&
+          rect.x + rect.width + 4 > other.x &&
+          rect.y < other.y + other.height + 4 &&
+          rect.y + rect.height + 4 > other.y,
+      );
+      if (overlaps) continue;
+      occupied.push(rect);
+      context.globalAlpha = 0.94;
+      context.fillStyle = css("--tooltip");
+      roundedRect(context, rect.x, rect.y, rect.width, rect.height, 999);
+      context.fill();
+      context.strokeStyle = departmentColor(department.department_id);
+      context.lineWidth = 1.4;
+      context.stroke();
+      context.globalAlpha = 1;
+      context.fillStyle = css("--text");
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText(text, rect.x + rect.width / 2, rect.y + rect.height / 2 + 0.5, rect.width - 12);
+      context.textAlign = "start";
+    }
   }
 
   function colorWithAlpha(color, alpha) {
@@ -626,11 +717,18 @@
     const width = Math.ceil(context.measureText(node.name).width) + 13;
     const height = 22;
     const radius = nodeRadius(node);
-    const selected = state.view.selectedId
-      ? state.filtered.nodeById.get(state.view.selectedId)
+    const selectedPoints = state.view.selectedIds
+      .map((id) => state.filtered.nodeById.get(id))
+      .filter(Boolean)
+      .map((selected) => worldToScreen(selected, now, transform));
+    const selectedCenter = selectedPoints.length
+      ? {
+          x: selectedPoints.reduce((sum, selected) => sum + selected.x, 0) / selectedPoints.length,
+          y: selectedPoints.reduce((sum, selected) => sum + selected.y, 0) / selectedPoints.length,
+        }
       : null;
-    const selectedPoint = selected ? worldToScreen(selected, now, transform) : null;
-    const placeLeft = selectedPoint && node.id !== selected.id && point.x < selectedPoint.x;
+    const placeLeft =
+      selectedCenter && !state.view.selectedIds.includes(node.id) && point.x < selectedCenter.x;
     const viewport = effectiveViewport();
     const minimumX = Math.max(8, viewport.left + 6);
     const maximumX = Math.max(
@@ -755,12 +853,17 @@
     elements.tooltip.style.top = `${Math.max(8, top)}px`;
   }
 
-  function selectFaculty(nodeId, { openDetails = true, focus = false } = {}) {
+  function selectFaculty(nodeId, { openDetails = true, ensureSelected = false } = {}) {
     if (!state.graph.nodeById.has(nodeId)) return;
-    state.view.selectedId = state.view.selectedId === nodeId && !focus ? "" : nodeId;
+    const selectedIds = [...state.view.selectedIds];
+    const selectedIndex = selectedIds.indexOf(nodeId);
+    if (selectedIndex >= 0 && !ensureSelected) selectedIds.splice(selectedIndex, 1);
+    else if (selectedIndex < 0) selectedIds.push(nodeId);
+    state.view.selectedIds = selectedIds;
     state.expandedEdgeId = "";
+    renderSelectedFaculty();
     applyView({ fit: true, animate: true });
-    if (state.view.selectedId) {
+    if (state.view.selectedIds.length) {
       if (openDetails && window.matchMedia("(max-width: 820px)").matches) {
         openMobilePanel("detail");
       }
@@ -768,9 +871,8 @@
   }
 
   function renderDetails() {
-    const nodeId = state.view?.selectedId;
-    const node = nodeId ? state.graph.nodeById.get(nodeId) : null;
-    if (!node) {
+    const selectedIds = state.view?.selectedIds || [];
+    if (!selectedIds.length) {
       elements.detailContent.hidden = true;
       elements.detailEmpty.hidden = false;
       elements.toggleDetails.disabled = !state.graph;
@@ -779,6 +881,23 @@
     elements.detailEmpty.hidden = true;
     elements.detailContent.hidden = false;
     elements.detailContent.replaceChildren();
+    if (selectedIds.length === 1) renderSingleFacultyDetails(selectedIds[0]);
+    else renderMultiFacultyDetails(selectedIds);
+  }
+
+  function appendDetailMetrics(entries) {
+    const metrics = element("div", "detail-metrics");
+    for (const [value, label] of entries) {
+      const metric = element("div", "detail-metric");
+      metric.append(element("strong", "", formatNumber(value)), element("span", "", label));
+      metrics.append(metric);
+    }
+    elements.detailContent.append(metrics);
+  }
+
+  function renderSingleFacultyDetails(nodeId) {
+    const node = state.graph.nodeById.get(nodeId);
+    if (!node) return;
     const filteredNode = state.filtered.nodeById.get(nodeId) || { ...node, degree: 0, strength: 0 };
     const connections = core.connectionsForNode(state.filtered, nodeId);
 
@@ -809,17 +928,11 @@
     if (links.children.length) header.append(links);
     elements.detailContent.append(header);
 
-    const metrics = element("div", "detail-metrics");
-    for (const [value, label] of [
+    appendDetailMetrics([
       [filteredNode.degree, "visible collaborators"],
       [filteredNode.strength, "pair–work records"],
       [node.mapped_publication_count, "mapped works"],
-    ]) {
-      const metric = element("div", "detail-metric");
-      metric.append(element("strong", "", formatNumber(value)), element("span", "", label));
-      metrics.append(metric);
-    }
-    elements.detailContent.append(metrics);
+    ]);
 
     const heading = element("div", "collaborator-heading");
     heading.append(
@@ -840,20 +953,84 @@
       return;
     }
 
+    elements.detailContent.append(
+      renderConnectionCards(connections, (connection) => ({
+        label: state.graph.nodeById.get(connection.collaboratorId).name,
+        colorNode: state.graph.nodeById.get(connection.collaboratorId),
+      })),
+    );
+  }
+
+  function renderMultiFacultyDetails(selectedIds) {
+    const selectedNodes = selectedIds.map((id) => state.graph.nodeById.get(id)).filter(Boolean);
+    const selection = core.subgraphForSelection(state.filtered, selectedIds);
+    const header = element("header", "detail-header");
+    header.append(
+      element("p", "eyebrow", "Selected faculty"),
+      element("h2", "detail-name", `${plural(selectedNodes.length, "faculty member")} selected`),
+    );
+    const roster = element("ul", "detail-selection-list");
+    for (const node of selectedNodes) {
+      const item = element("li");
+      const dot = element("span", "legend-dot");
+      dot.style.setProperty("--dot", departmentColor(node.primary_department));
+      dot.setAttribute("aria-hidden", "true");
+      const departmentNames = node.departments
+        .map((id) => state.graph.departmentById.get(id)?.short_title || id)
+        .join(" · ");
+      item.append(dot, element("strong", "", node.name), element("small", "", departmentNames));
+      roster.append(item);
+    }
+    header.append(roster);
+    elements.detailContent.append(header);
+
+    appendDetailMetrics([
+      [selectedNodes.length, "selected faculty"],
+      [selection.edges.length, "visible connections"],
+      [selection.visibleWorkCount, "unique shared works"],
+    ]);
+
+    const heading = element("div", "collaborator-heading");
+    heading.append(
+      element("h3", "", "Connections involving selection"),
+      element("span", "", selection.edges.length ? "Select a row for evidence" : "Current view"),
+    );
+    elements.detailContent.append(heading);
+    if (!selection.edges.length) {
+      elements.detailContent.append(
+        element(
+          "p",
+          "detail-no-links",
+          "No connections involving the selected faculty meet the current year, department, and strength filters.",
+        ),
+      );
+      return;
+    }
+
+    elements.detailContent.append(
+      renderConnectionCards(selection.edges, (connection) => {
+        const source = state.graph.nodeById.get(connection.source);
+        const target = state.graph.nodeById.get(connection.target);
+        return { label: `${source.name} ↔ ${target.name}`, colorNode: source };
+      }),
+    );
+  }
+
+  function renderConnectionCards(connections, describeConnection) {
     const list = element("div", "collaborator-list");
     for (const connection of connections) {
-      const collaborator = state.graph.nodeById.get(connection.collaboratorId);
+      const { label, colorNode } = describeConnection(connection);
       const card = element("article", "collaborator-card");
       const button = element("button", "collaborator-button");
       button.type = "button";
       button.dataset.edgeId = connection.id;
       button.setAttribute("aria-expanded", String(state.expandedEdgeId === connection.id));
       const dot = element("span", "legend-dot");
-      dot.style.setProperty("--dot", departmentColor(collaborator.primary_department));
+      dot.style.setProperty("--dot", departmentColor(colorNode.primary_department));
       dot.setAttribute("aria-hidden", "true");
       button.append(
         dot,
-        element("strong", "", collaborator.name),
+        element("strong", "", label),
         element("span", "", `${connection.count} ${connection.count === 1 ? "work" : "works"}`),
       );
       card.append(button);
@@ -862,7 +1039,7 @@
       }
       list.append(card);
     }
-    elements.detailContent.append(list);
+    return list;
   }
 
   function renderPublications(connection) {
@@ -889,9 +1066,35 @@
     return list;
   }
 
+  function renderSelectedFaculty() {
+    const selectedNodes = (state.view?.selectedIds || [])
+      .map((id) => state.graph?.nodeById.get(id))
+      .filter(Boolean);
+    elements.selectedFaculty.replaceChildren();
+    elements.selectedFaculty.hidden = selectedNodes.length === 0;
+    elements.facultySearch.placeholder = selectedNodes.length
+      ? "Add another faculty member"
+      : `Search ${formatNumber(state.graph?.nodes.length)} faculty`;
+    for (const node of selectedNodes) {
+      const item = element("li");
+      const name = element("span", "", node.name);
+      const remove = element("button", "", "×");
+      remove.type = "button";
+      remove.dataset.removeFacultyId = node.id;
+      remove.setAttribute("aria-label", `Remove ${node.name} from selection`);
+      item.append(name, remove);
+      elements.selectedFaculty.append(item);
+    }
+  }
+
   function renderSuggestions() {
     const query = elements.facultySearch.value;
-    state.suggestionNodes = core.facultyMatches(state.graph, query, 9);
+    state.suggestionNodes = core.facultyMatches(
+      state.graph,
+      query,
+      9,
+      state.view.selectedIds,
+    );
     state.activeSuggestion = state.suggestionNodes.length ? 0 : -1;
     elements.facultySuggestions.replaceChildren();
     if (!query.trim()) {
@@ -899,7 +1102,11 @@
       return;
     }
     if (!state.suggestionNodes.length) {
-      const empty = element("li", "suggestion-empty", "No faculty match this search.");
+      const empty = element(
+        "li",
+        "suggestion-empty",
+        "No additional faculty match this search.",
+      );
       elements.facultySuggestions.append(empty);
     } else {
       state.suggestionNodes.forEach((node, index) => {
@@ -947,9 +1154,9 @@
   function commitSuggestion(index = state.activeSuggestion) {
     const node = state.suggestionNodes[index];
     if (!node) return;
-    elements.facultySearch.value = node.name;
+    elements.facultySearch.value = "";
     closeSuggestions();
-    selectFaculty(node.id, { openDetails: true, focus: true });
+    selectFaculty(node.id, { openDetails: true, ensureSelected: true });
   }
 
   function showToast(message) {
@@ -1125,6 +1332,12 @@
       const index = state.suggestionNodes.findIndex((node) => node.id === button.dataset.facultyId);
       commitSuggestion(index);
     });
+    elements.selectedFaculty.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-remove-faculty-id]");
+      if (!button) return;
+      selectFaculty(button.dataset.removeFacultyId, { openDetails: false });
+      elements.facultySearch.focus();
+    });
     document.addEventListener("pointerdown", (event) => {
       if (!event.target.closest(".faculty-field")) closeSuggestions();
     });
@@ -1170,6 +1383,11 @@
     });
     elements.showUnconnected.addEventListener("change", () => {
       state.view.showUnconnected = elements.showUnconnected.checked;
+      applyView({ fit: true, animate: true });
+    });
+    elements.layoutOptions.addEventListener("change", (event) => {
+      if (!event.target.matches('input[name="graph-layout"]')) return;
+      state.view.layout = event.target.value;
       applyView({ fit: true, animate: true });
     });
     elements.detailContent.addEventListener("click", (event) => {

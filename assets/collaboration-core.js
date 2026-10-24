@@ -174,8 +174,15 @@
       minimum: 1,
       crossDepartment: false,
       showUnconnected: false,
-      selectedId: "",
+      layout: "collaboration",
+      selectedIds: [],
     };
+  }
+
+  function validFacultyIds(values, graph) {
+    return uniqueStrings(Array.isArray(values) ? values : [values])
+      .filter(Boolean)
+      .filter((id) => graph.nodeById.has(id));
   }
 
   function clamp(value, minimum, maximum) {
@@ -200,9 +207,10 @@
       graph.years.maximum,
     );
     if (fromYear > toYear) [fromYear, toYear] = [toYear, fromYear];
-    const selectedId = graph.nodeById.has(params.get("faculty"))
-      ? params.get("faculty")
-      : "";
+    const selectedIds = validFacultyIds(
+      params.getAll("faculty").flatMap((value) => value.split(",")),
+      graph,
+    );
     return {
       departments,
       fromYear,
@@ -210,7 +218,8 @@
       minimum: clamp(integer(params.get("minimum"), 1), 1, 20),
       crossDepartment: params.get("cross") === "1",
       showUnconnected: params.get("unconnected") === "1",
-      selectedId,
+      layout: params.get("layout") === "departments" ? "departments" : "collaboration",
+      selectedIds,
     };
   }
 
@@ -223,8 +232,10 @@
     if (state.minimum !== 1) params.set("minimum", String(state.minimum));
     if (state.crossDepartment) params.set("cross", "1");
     if (state.showUnconnected) params.set("unconnected", "1");
-    if (state.selectedId && graph.nodeById.has(state.selectedId)) {
-      params.set("faculty", state.selectedId);
+    if (state.layout === "departments") params.set("layout", "departments");
+    const selectedIds = validFacultyIds(state.selectedIds || [], graph);
+    if (selectedIds.length) {
+      params.set("faculty", selectedIds.join(","));
     }
     const value = params.toString();
     return value ? `?${value}` : "";
@@ -277,9 +288,7 @@
     if (state.showUnconnected) {
       candidateIds.forEach((id) => visibleIds.add(id));
     }
-    if (state.selectedId && graph.nodeById.has(state.selectedId)) {
-      visibleIds.add(state.selectedId);
-    }
+    validFacultyIds(state.selectedIds || [], graph).forEach((id) => visibleIds.add(id));
 
     const nodes = graph.nodes
       .filter((node) => visibleIds.has(node.id))
@@ -302,12 +311,14 @@
     };
   }
 
-  function facultyMatches(graph, query, limit = 10) {
+  function facultyMatches(graph, query, limit = 10, excludedIds = []) {
     const normalized = String(query || "").trim().toLocaleLowerCase();
     if (!normalized) return [];
     const terms = normalized.split(/\s+/).filter(Boolean);
+    const excluded = new Set(validFacultyIds(excludedIds, graph));
     return graph.nodes
       .map((node) => {
+        if (excluded.has(node.id)) return null;
         const departmentText = node.departments
           .map((id) => graph.departmentById.get(id)?.title || id)
           .join(" ")
@@ -342,6 +353,35 @@
         (left, right) =>
           right.count - left.count || left.collaboratorId.localeCompare(right.collaboratorId),
       );
+  }
+
+  function subgraphForSelection(filtered, nodeIds) {
+    const selectedIds = uniqueStrings(Array.isArray(nodeIds) ? nodeIds : [nodeIds])
+      .filter(Boolean)
+      .filter((id) => filtered.nodeById.has(id));
+    const selected = new Set(selectedIds);
+    const edges = filtered.edges.filter(
+      (edge) => selected.has(edge.source) || selected.has(edge.target),
+    );
+    const includedIds = new Set(selectedIds);
+    const visibleWorkIds = new Set();
+    edges.forEach((edge) => {
+      includedIds.add(edge.source);
+      includedIds.add(edge.target);
+      edge.works.forEach((work) => visibleWorkIds.add(work.id));
+    });
+    const nodes = filtered.nodes.filter((node) => includedIds.has(node.id));
+    return {
+      selectedIds,
+      selectedIdSet: selected,
+      nodes,
+      edges,
+      nodeIds: includedIds,
+      nodeById: new Map(nodes.map((node) => [node.id, node])),
+      edgeById: new Map(edges.map((edge) => [edge.id, edge])),
+      visibleWorkCount: visibleWorkIds.size,
+      maximumEdgeCount: Math.max(1, ...edges.map((edge) => edge.count)),
+    };
   }
 
   function layoutHash(value) {
@@ -529,7 +569,104 @@
     return candidates[0].positions;
   }
 
-  function selectionLayout(filtered, nodeId) {
+  function departmentLayout(filtered, graph) {
+    if (!filtered?.nodes?.length) return new Map();
+
+    const groups = new Map();
+    for (const node of filtered.nodes) {
+      if (!groups.has(node.primary_department)) groups.set(node.primary_department, []);
+      groups.get(node.primary_department).push(node);
+    }
+    const activeDepartmentIds = [
+      ...graph.departments
+        .map((department) => department.department_id)
+        .filter((id) => groups.has(id)),
+      ...[...groups.keys()]
+        .filter((id) => !graph.departmentById.has(id))
+        .sort((left, right) => left.localeCompare(right)),
+    ];
+    const departmentRank = new Map(activeDepartmentIds.map((id, index) => [id, index]));
+    const crossStrengthByNode = new Map(filtered.nodes.map((node) => [node.id, 0]));
+    const crossStrengthByDepartment = new Map(activeDepartmentIds.map((id) => [id, 0]));
+    const adjacency = new Map(activeDepartmentIds.map((id) => [id, new Map()]));
+
+    for (const edge of filtered.edges) {
+      const source = filtered.nodeById.get(edge.source);
+      const target = filtered.nodeById.get(edge.target);
+      if (!source || !target || source.primary_department === target.primary_department) continue;
+      const weight = Math.max(1, edge.count || 1);
+      crossStrengthByNode.set(source.id, crossStrengthByNode.get(source.id) + weight);
+      crossStrengthByNode.set(target.id, crossStrengthByNode.get(target.id) + weight);
+      for (const [left, right] of [
+        [source.primary_department, target.primary_department],
+        [target.primary_department, source.primary_department],
+      ]) {
+        crossStrengthByDepartment.set(left, crossStrengthByDepartment.get(left) + weight);
+        adjacency.get(left).set(right, (adjacency.get(left).get(right) || 0) + weight);
+      }
+    }
+
+    const compareDepartments = (left, right, anchor = "") =>
+      (adjacency.get(anchor)?.get(right) || 0) - (adjacency.get(anchor)?.get(left) || 0) ||
+      crossStrengthByDepartment.get(right) - crossStrengthByDepartment.get(left) ||
+      departmentRank.get(left) - departmentRank.get(right) ||
+      left.localeCompare(right);
+    const remaining = new Set(activeDepartmentIds);
+    const orderedDepartmentIds = [];
+    let current = [...remaining].sort((left, right) => compareDepartments(left, right))[0];
+    while (current) {
+      orderedDepartmentIds.push(current);
+      remaining.delete(current);
+      current = [...remaining].sort((left, right) => compareDepartments(left, right, current))[0];
+    }
+
+    const positions = new Map();
+    const departmentCount = orderedDepartmentIds.length;
+    orderedDepartmentIds.forEach((departmentId, departmentIndex) => {
+      const angle =
+        departmentCount === 1
+          ? -Math.PI / 2
+          : departmentCount === 2
+            ? departmentIndex === 0
+              ? Math.PI
+              : 0
+            : -Math.PI / 2 + (departmentIndex / departmentCount) * Math.PI * 2;
+      const center =
+        departmentCount === 1
+          ? { x: 0, y: 0 }
+          : { x: Math.cos(angle) * 1.3, y: Math.sin(angle) * 0.98 };
+      const inward = { x: -Math.cos(angle), y: -Math.sin(angle) };
+      const tangent = { x: -inward.y, y: inward.x };
+      const nodes = [...groups.get(departmentId)].sort(
+        (left, right) =>
+          crossStrengthByNode.get(right.id) - crossStrengthByNode.get(left.id) ||
+          right.strength - left.strength ||
+          right.degree - left.degree ||
+          left.id.localeCompare(right.id),
+      );
+      const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
+      const rows = Math.max(1, Math.ceil(nodes.length / columns));
+      const spacing = Math.min(0.075, 0.42 / Math.max(1, columns - 1, rows - 1));
+
+      nodes.forEach((node, index) => {
+        const row = Math.floor(index / columns);
+        const column = index % columns;
+        const itemsInRow = Math.min(columns, nodes.length - row * columns);
+        const inwardOffset = ((rows - 1) / 2 - row) * spacing;
+        const tangentOffset = (column - (itemsInRow - 1) / 2) * spacing;
+        positions.set(node.id, {
+          x: center.x + inward.x * inwardOffset + tangent.x * tangentOffset,
+          y: center.y + inward.y * inwardOffset + tangent.y * tangentOffset,
+        });
+      });
+    });
+    return positions;
+  }
+
+  function selectionLayout(filtered, nodeIds) {
+    const selection = subgraphForSelection(filtered, nodeIds);
+    if (selection.selectedIds.length > 1) return collaborationLayout(selection);
+    const nodeId = selection.selectedIds[0];
     const selected = filtered.nodeById.get(nodeId);
     if (!selected) return new Map();
 
@@ -618,6 +755,7 @@
     collaborationLayout,
     connectionsForNode,
     defaultState,
+    departmentLayout,
     doiUrl,
     edgeKey,
     edgeCrossingCount,
@@ -629,5 +767,7 @@
     selectionLayout,
     stateFromSearch,
     stateToSearch,
+    subgraphForSelection,
+    validFacultyIds,
   });
 });

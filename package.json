@@ -10,6 +10,6 @@
   "scripts": {
     "build": "node scripts/build-site.js",
     "check": "node --check assets/theme.js && node --check assets/collaboration-core.js && node --check assets/collaboration.js && node --check scripts/build-site.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test --experimental-test-coverage --test-coverage-include=assets/collaboration-core.js --test-coverage-include=scripts/build-site.js --test-coverage-lines=90 --test-coverage-branches=90 --test-coverage-functions=90 tests/*.test.js"
   }
 }

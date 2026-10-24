@@ -8,8 +8,14 @@ artifact maintained by
 Each node is a cataloged CMU Engineering faculty member. An edge connects two
 faculty members when the source artifact associates both stable faculty IDs
 with the same deduplicated work. Edge thickness is the number of shared works
-in the selected year range. Selecting a person exposes the publications behind
-every displayed connection.
+in the selected year range. One or more faculty members can be selected to
+compare the union of their visible collaboration neighborhoods and inspect the
+publications behind every displayed connection.
+
+The default layout emphasizes the overall collaboration structure. A shareable
+department-cluster layout separates primary affiliations and places the most
+cross-departmental faculty toward the open center, making links between groups
+easier to trace.
 
 ## What this graph does—and does not—show
 
@@ -42,6 +48,9 @@ Then open <http://localhost:8000>.
 npm run check
 npm test
 ```
+
+The test command enforces at least 90% line, branch, and function coverage
+across the graph logic and site-build pipeline.
 
 ## Deployment
 
