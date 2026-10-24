@@ -2,7 +2,7 @@
 
 [![Deploy collaboration graph](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml/badge.svg)](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml)
 [![Live site](https://img.shields.io/website?url=https%3A%2F%2Fcmccomb.github.io%2Fmap-of-collaboration%2F&label=live%20site)](https://cmccomb.github.io/map-of-collaboration/)
-[![Coverage threshold](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen)](#checks)
+[![Line coverage: 98.44%](https://img.shields.io/badge/line%20coverage-98.44%25-brightgreen)](#checks)
 [![License: MIT](https://img.shields.io/github/license/cmccomb/map-of-collaboration)](LICENSE)
 
 An interactive coauthorship graph built from the canonical
@@ -56,8 +56,10 @@ npm run check
 npm test
 ```
 
-The test command enforces at least 90% line, branch, and function coverage
-across the graph logic and site-build pipeline.
+The current 28-test suite reports **98.44% line coverage**, **92.36% branch
+coverage**, and **97.85% function coverage** across the instrumented graph
+logic and site-build pipeline. The test command enforces a 90% minimum for all
+three measures.
 
 ## Deployment
 
