@@ -1,4 +1,4 @@
-# CMU Engineering Collaborations
+# CMU Faculty Collaborations
 
 [![Deploy collaboration graph](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml/badge.svg)](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml)
 [![Live site](https://img.shields.io/website?url=https%3A%2F%2Fcmccomb.github.io%2Fmap-of-collaboration%2F&label=live%20site)](https://cmccomb.github.io/map-of-collaboration/)
@@ -10,7 +10,7 @@ An interactive coauthorship graph built from the canonical
 artifact maintained by
 [`cmccomb/map-of-research`](https://github.com/cmccomb/map-of-research).
 
-Each node is a cataloged CMU Engineering faculty member. An edge connects two
+Each faculty node is a cataloged CMU faculty member. An edge connects two
 faculty members when the source artifact associates both stable faculty IDs
 with the same deduplicated work. Edge thickness is the number of shared works
 in the selected year range. One or more faculty members can be selected to
@@ -75,7 +75,7 @@ an immutable Hugging Face revision, derives `data/collaborations.json`, and
 ships that compact artifact with the site. The source publication artifact is
 not committed here.
 
-## School-aware pilot contract
+## School coverage
 
 The graph builder also accepts additive school fields in the publication
 artifact: `catalogs.schools` with `school_id`, `title`, and `directory_url`;
@@ -111,9 +111,8 @@ links on shared works and labels the external node in search, details, the
 color key, and CSV export. The normal Engineering artifact, which has no
 external coauthor catalog, keeps its original behavior.
 
-The local SCS and MCS roster preview catalogs 811 CMU faculty across the three
-schools. Most newly cataloged people have no cached publications yet, so the
-graph is an observed subset rather than a complete school coauthorship map.
-The committed `map-config.json` remains pointed at the published Engineering
-dataset. A school preview requires a separately reviewed publication artifact
-before changing the public source.
+The first public graph covered Engineering. The staged CMU registry adds SCS and
+MCS faculty to that roster; publication coverage will grow department by
+department, starting with Mathematical Sciences. The Hugging Face dataset ID
+retains its Engineering name for this rollout. The graph shows only
+coauthorship observed in indexed works, even when a faculty roster is broader.

@@ -11,9 +11,9 @@
     <meta name="theme-color" content="#0a141e" />
     <meta
       name="description"
-      content="Explore observed publication collaborations among CMU Engineering faculty."
+      content="Explore observed coauthorship among cataloged CMU faculty, with school and department filters where data are available."
     />
-    <title>CMU Engineering Collaborations</title>
+    <title>CMU Faculty Collaborations</title>
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <script src="assets/theme.js"></script>
     <link rel="stylesheet" href="assets/collaboration.css" />
@@ -60,7 +60,7 @@
         aria-busy="true"
       >
         <section class="panel-intro" aria-labelledby="graph-title">
-          <p class="eyebrow">College of Engineering</p>
+          <p class="eyebrow">Carnegie Mellon University</p>
           <h1 id="graph-title">Faculty Collaboration at CMU</h1>
           <p class="dek">
             Each line is an observed coauthorship. Thicker lines represent more
@@ -72,12 +72,12 @@
           <div class="intro-links">
             <a
               href="https://cmccomb.com/map-of-eng/"
-              aria-label="Open the CMU Engineering research map"
-              >Engineering map <span aria-hidden="true">↗</span></a
+              aria-label="Open the CMU faculty research map"
+              >Research map <span aria-hidden="true">↗</span></a
             >
             <a
               href="https://huggingface.co/datasets/ccm/cmu-engineering-publications"
-              aria-label="Open the full CMU Engineering publication dataset"
+              aria-label="Open the CMU faculty publication dataset"
               >Dataset <span aria-hidden="true">↗</span></a
             >
           </div>
@@ -314,7 +314,7 @@
         <canvas
           id="graph-canvas"
           tabindex="0"
-          aria-label="Interactive CMU Engineering faculty collaboration graph"
+          aria-label="Interactive CMU faculty collaboration graph"
           aria-describedby="canvas-instructions"
         ></canvas>
         <p id="canvas-instructions" class="sr-only">

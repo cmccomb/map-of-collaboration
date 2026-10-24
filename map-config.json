@@ -1,6 +1,6 @@
 {
-  "title": "CMU Engineering Collaborations",
-  "heading": "Faculty Collaboration at CMU Engineering",
+  "title": "CMU Faculty Collaborations",
+  "heading": "Faculty Collaboration at CMU",
   "dataset_id": "ccm/cmu-engineering-publications",
   "dataset_revision": "main",
   "artifact_path": "maps/publications.json"
