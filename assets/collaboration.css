@@ -333,6 +333,12 @@ h1 {
   position: relative;
 }
 
+.roster-toggle {
+  margin-top: 0.48rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--line);
+}
+
 input[type="search"],
 input[type="number"] {
   width: 100%;

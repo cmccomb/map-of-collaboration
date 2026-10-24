@@ -23,6 +23,7 @@
     departmentOptions: document.querySelector("#department-options"),
     departmentLegend: document.querySelector("#department-legend"),
     facultySearch: document.querySelector("#faculty-search"),
+    facultySearchNote: document.querySelector("#faculty-search-note"),
     facultySuggestions: document.querySelector("#faculty-suggestions"),
     selectedFaculty: document.querySelector("#selected-faculty"),
     yearMin: document.querySelector("#year-min"),
@@ -214,6 +215,10 @@
       syncControls();
       applyView({ fit: true, updateUrl: false });
       const counts = state.graph.counts;
+      elements.facultySearchNote.textContent = `Search all ${plural(
+        counts.faculty_count,
+        "cataloged faculty member",
+      )} across ${plural(state.graph.departments.length, "department or program", "departments and programs")}, including people without mapped works. Connected faculty appear on the graph by default.`;
       elements.status.textContent = `${plural(counts.faculty_count, "faculty member")}${
         counts.external_coauthor_count
           ? ` · ${plural(counts.external_coauthor_count, "external coauthor")}`

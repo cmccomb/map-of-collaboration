@@ -131,7 +131,7 @@
                 aria-expanded="false"
                 aria-describedby="faculty-search-note"
                 autocomplete="off"
-                placeholder="Search 312 faculty"
+                placeholder="Search faculty"
               />
             </label>
             <ul
@@ -148,8 +148,15 @@
               hidden
             ></ul>
             <p id="faculty-search-note" class="field-note">
-              Search to add any number; select a graph node to add or remove it.
+              Search the full faculty roster, including people without mapped works.
             </p>
+            <label class="check-row roster-toggle">
+              <input id="show-unconnected" type="checkbox" />
+              <span>
+                <strong>Show unconnected faculty</strong>
+                <small>Add cataloged faculty without a visible edge to the graph</small>
+              </span>
+            </label>
           </div>
 
           <label class="check-row" id="show-external-row" hidden>
@@ -219,13 +226,6 @@
               <span>
                 <strong>Cross-school only</strong>
                 <small>Hide pairs that share a school</small>
-              </span>
-            </label>
-            <label class="check-row">
-              <input id="show-unconnected" type="checkbox" />
-              <span>
-                <strong>Show unconnected faculty</strong>
-                <small>Include cataloged people without a visible edge</small>
               </span>
             </label>
           </fieldset>
