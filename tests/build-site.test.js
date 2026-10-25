@@ -148,6 +148,27 @@ test("deriveGraph creates evidence-backed edges and coverage counts", () => {
   });
 });
 
+test("deriveGraph keeps publication evidence without assigning its map region as a paper topic", () => {
+  const artifact = artifactFixture();
+  artifact.keywords[0].label = "microneedles & drug delivery";
+  artifact.points[0].title = "Nanoscale 3D profiling of the T cell membrane";
+  artifact.points[0].source_types = ["scholar"];
+  artifact.points[0].source_url = "https://example.com/t-cell-paper";
+
+  const graph = build.deriveGraph(artifact, config, "a".repeat(40));
+  assert.deepEqual(graph.edges[0].works[0], {
+    id: "work-1",
+    title: "Nanoscale 3D profiling of the T cell membrane",
+    year: 2024,
+    venue: "Journal",
+    citations: 4,
+    doi: "",
+    url: "https://example.com/t-cell-paper",
+    topic: "",
+  });
+  assert.equal(graph.counts.pair_work_count, 1);
+});
+
 test("deriveGraph keeps cross-school coauthorship and cross-appointed faculty distinct", () => {
   const artifact = schoolArtifactFixture();
   artifact.catalogs.departments.push({

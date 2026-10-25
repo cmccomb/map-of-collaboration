@@ -548,9 +548,6 @@ function deriveGraph(artifact, config, revision) {
   });
   const nodes = [...facultyNodes, ...externalNodes];
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
-  const keywordById = new Map(
-    (artifact.keywords || []).map((keyword) => [keyword.keyword_id, keyword.label]),
-  );
   const workIds = new Set();
   const edgeMap = new Map();
   let missingYearCount = 0;
@@ -600,9 +597,6 @@ function deriveGraph(artifact, config, revision) {
     const year = Number.isInteger(point.year) ? point.year : null;
     if (year === null) missingYearCount += 1;
     if (validFaculty.length > 1) multipleFacultyWorkCount += 1;
-    const detailedTopicId = Array.isArray(point.keyword_ids)
-      ? point.keyword_ids.at(-1)
-      : "";
     const work = {
       id: workId,
       title: String(point.title),
@@ -620,10 +614,10 @@ function deriveGraph(artifact, config, revision) {
       ...(Array.isArray(point.source_verification_urls) && point.source_verification_urls.length
         ? { source_verification_urls: [...new Set(point.source_verification_urls.map(String))] }
         : {}),
-      topic: point.source_types?.includes("curated_verified")
-        && !point.source_types.includes("scholar")
-        ? ""
-        : String(keywordById.get(detailedTopicId) || ""),
+      // Publication keywords name map regions, not individual papers. Keep the
+      // region metadata in the source artifact without claiming it as this
+      // work's topic in a coauthor detail panel.
+      topic: "",
     };
     const includedAuthors = [...validFaculty, ...pointExternal].sort();
     for (let left = 0; left < includedAuthors.length; left += 1) {
