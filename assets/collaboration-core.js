@@ -285,6 +285,8 @@
         primary_school: primarySchool,
         roles: uniqueStrings(node.roles),
         publication_count: Math.max(0, integer(node.publication_count)),
+        publication_hold_reason: kind === "faculty" && typeof node.publication_hold_reason === "string"
+          ? node.publication_hold_reason.trim() : "",
         mapped_publication_count: Math.max(0, integer(node.mapped_publication_count)),
         collaborator_count: Math.max(0, integer(node.collaborator_count)),
         collaboration_count: Math.max(0, integer(node.collaboration_count)),

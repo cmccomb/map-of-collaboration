@@ -497,6 +497,8 @@ function deriveGraph(artifact, config, revision) {
         : personSchools.length === 1 ? personSchools[0] : "",
       roles: [...new Set(memberships.map((membership) => String(membership.role || "faculty")))],
       publication_count: Math.max(0, Number(person.publication_count) || 0),
+      publication_hold_reason: typeof person.publication_hold_reason === "string"
+        ? person.publication_hold_reason.trim() : "",
       mapped_publication_count: 0,
       collaborator_count: 0,
       collaboration_count: 0,

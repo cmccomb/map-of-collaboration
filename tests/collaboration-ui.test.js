@@ -177,7 +177,7 @@ function makeCanvasContext() {
   return context;
 }
 
-async function openMap(search) {
+async function openMap(search, graphData = graphFixture()) {
   const elements = new Map();
   const context = makeCanvasContext();
   const errors = [];
@@ -236,7 +236,7 @@ async function openMap(search) {
       ok: true,
       json: async () => request === "map-config.json"
         ? { graph_artifact: `data/collaborations.${"a".repeat(40)}.json` }
-        : graphFixture(),
+        : graphData,
     }),
     performance: { now: () => 1000 },
     console: { error(error) { errors.push(error); } },
@@ -363,4 +363,17 @@ test("single-school focus hides the college box toggle but keeps home boxes avai
   assert.equal(page.elementFor("#outline-controls").hidden, false);
   assert.equal(page.elementFor("#school-outline-row").hidden, true);
   assert.equal(page.elementFor("#show-home-outlines").checked, true);
+});
+
+test("selected faculty shows only that person's publication coverage hold", async () => {
+  const value = graphFixture();
+  value.nodes[0].publication_hold_reason = "Publication history pending full capture";
+  const held = await openMap("?faculty=a", value);
+  const notes = held.elementFor("#detail-content").querySelectorAll(".detail-coverage");
+  assert.equal(notes.length, 1);
+  assert.equal(notes[0].children[0].textContent, "Publication coverage");
+  assert.equal(notes[0].children[1].textContent,
+    "Publication history pending full capture");
+  const other = await openMap("?faculty=b", value);
+  assert.equal(other.elementFor("#detail-content").querySelectorAll(".detail-coverage").length, 0);
 });

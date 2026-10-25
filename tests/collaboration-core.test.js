@@ -89,6 +89,17 @@ function fixture() {
   };
 }
 
+test("publication hold stays with its faculty member in parsed graph", () => {
+  const value = fixture();
+  value.nodes[0].publication_hold_reason = " Publication history pending full capture ";
+  value.nodes[1].publication_hold_reason = { invalid: true };
+  const graph = core.parseGraph(value);
+  assert.equal(graph.nodeById.get("a").publication_hold_reason,
+    "Publication history pending full capture");
+  assert.equal(graph.nodeById.get("b").publication_hold_reason, "");
+  assert.equal(graph.edges.length, 2);
+});
+
 test("publication provenance distinguishes Scholar and researcher bibliography evidence", () => {
   assert.deepEqual(core.publicationProvenance([]), {
     citationCountUnavailable: false,
