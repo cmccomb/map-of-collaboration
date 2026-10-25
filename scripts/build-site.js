@@ -566,6 +566,10 @@ function deriveGraph(artifact, config, revision) {
     assert(workId && !workIds.has(workId), `Duplicate or invalid work ID: ${workId}`);
     workIds.add(workId);
     assert(String(point.title || "").trim(), `Work ${workId} has no title`);
+    assert(point.collaboration_eligible === undefined
+      || typeof point.collaboration_eligible === "boolean",
+    `Work ${workId} has invalid collaboration eligibility`);
+    const collaborationEligible = point.collaboration_eligible !== false;
     const originalFaculty = Array.isArray(point.faculty_ids) ? point.faculty_ids.map(String) : [];
     const pointFaculty = [...new Set(originalFaculty)];
     duplicateFacultyReferenceCount += originalFaculty.length - pointFaculty.length;
@@ -596,11 +600,14 @@ function deriveGraph(artifact, config, revision) {
     validFaculty.forEach((facultyId) => {
       nodeById.get(facultyId).mapped_publication_count += 1;
     });
-    pointExternal.forEach((id) => {
-      nodeById.get(id).mapped_publication_count += 1;
-    });
+    if (collaborationEligible) {
+      pointExternal.forEach((id) => {
+        nodeById.get(id).mapped_publication_count += 1;
+      });
+    }
     const year = Number.isInteger(point.year) ? point.year : null;
     if (year === null) missingYearCount += 1;
+    if (!collaborationEligible) continue;
     if (validFaculty.length > 1) multipleFacultyWorkCount += 1;
     const detailedTopicId = Array.isArray(point.keyword_ids)
       ? point.keyword_ids.at(-1)
