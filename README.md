@@ -2,7 +2,7 @@
 
 [![Deploy collaboration graph](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml/badge.svg)](https://github.com/cmccomb/map-of-collaboration/actions/workflows/deploy.yml)
 [![Live site](https://img.shields.io/website?url=https%3A%2F%2Fcmccomb.github.io%2Fmap-of-collaboration%2F&label=live%20site)](https://cmccomb.github.io/map-of-collaboration/)
-[![Line coverage: 98.82%](https://img.shields.io/badge/line%20coverage-98.82%25-brightgreen)](#checks)
+[![Line coverage: 98.66%](https://img.shields.io/badge/line%20coverage-98.66%25-brightgreen)](#checks)
 [![License: MIT](https://img.shields.io/github/license/cmccomb/map-of-collaboration)](LICENSE)
 
 An interactive coauthorship graph built from the canonical
@@ -58,6 +58,13 @@ including an explicit neutral `school_spacing=0`, as `spacing` and
 `school_spacing`. The college distance control is hidden when one school is
 selected because it cannot move nodes in that view.
 
+In the home layouts, Display can hide the college or school group boxes and the
+outlined labels for departments and other academic homes independently. The
+college or school boxes appear only in Home force when multiple groups are
+visible. These choices change the canvas only: faculty, edges, colors, filters,
+and layout positions stay in place. Shared view links record either hidden
+choice as `school_outlines=0` or `home_outlines=0`; Clear restores both.
+
 ## What this graph does—and does not—show
 
 The graph shows **observed coauthorship within the cataloged faculty set**. It
@@ -90,8 +97,8 @@ npm run check
 npm test
 ```
 
-The current 44-test suite reports **98.82% line coverage**, **91.42% branch
-coverage**, and **98.00% function coverage** across the instrumented graph
+The current 56-test suite reports **98.66% line coverage**, **92.12% branch
+coverage**, and **98.08% function coverage** across the instrumented graph
 logic and site-build pipeline. The test command enforces a 90% minimum for all
 three measures.
 

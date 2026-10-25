@@ -388,6 +388,8 @@
       crossSchool: false,
       showExternal: false,
       showUnconnected: false,
+      showSchoolOutlines: true,
+      showHomeOutlines: true,
       layout: "collaboration",
       departmentSpacing: 3,
       schoolSpacing: graph.schools.length > 1 ? 8 : 0,
@@ -495,6 +497,8 @@
       crossSchool: graph.schools.length > 1 && params.get("cross_school") === "1",
       showExternal: params.get("external") === "1",
       showUnconnected: params.get("unconnected") === "1",
+      showSchoolOutlines: params.get("school_outlines") !== "0",
+      showHomeOutlines: params.get("home_outlines") !== "0",
       layout,
       departmentSpacing: clamp(integer(params.get("spacing"), 3), 1, 10),
       schoolSpacing: graph.schools.length > 1
@@ -522,6 +526,8 @@
       params.set("external", "1");
     }
     if (state.showUnconnected) params.set("unconnected", "1");
+    if (!state.showSchoolOutlines) params.set("school_outlines", "0");
+    if (!state.showHomeOutlines) params.set("home_outlines", "0");
     if (["departments", "department-force"].includes(state.layout)) {
       params.set("layout", state.layout);
     }

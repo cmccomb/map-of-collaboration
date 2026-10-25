@@ -34,6 +34,10 @@
     crossDepartment: document.querySelector("#cross-department"),
     crossSchoolRow: document.querySelector("#cross-school-row"),
     crossSchool: document.querySelector("#cross-school"),
+    outlineControls: document.querySelector("#outline-controls"),
+    schoolOutlineRow: document.querySelector("#school-outline-row"),
+    showSchoolOutlines: document.querySelector("#show-school-outlines"),
+    showHomeOutlines: document.querySelector("#show-home-outlines"),
     showUnconnected: document.querySelector("#show-unconnected"),
     showExternalRow: document.querySelector("#show-external-row"),
     showExternal: document.querySelector("#show-external"),
@@ -423,6 +427,11 @@
     }`;
     elements.crossDepartment.checked = view.crossDepartment;
     elements.crossSchool.checked = view.crossSchool;
+    elements.showSchoolOutlines.checked = view.showSchoolOutlines;
+    elements.showHomeOutlines.checked = view.showHomeOutlines;
+    elements.outlineControls.hidden = !isDepartmentLayout(view.layout);
+    elements.schoolOutlineRow.hidden = view.layout !== "department-force"
+      || state.graph.schools.length <= 1 || view.schools.length === 1;
     elements.showUnconnected.checked = view.showUnconnected;
     elements.showExternal.checked = view.showExternal;
     elements.layoutOptions.querySelectorAll("input").forEach((input) => {
@@ -461,16 +470,18 @@
     state.expandedEdgeId = state.filtered.edgeById.has(state.expandedEdgeId)
       ? state.expandedEdgeId
       : "";
-    if (updateUrl) {
-      const next = `${window.location.pathname}${core.stateToSearch(state.view, state.graph)}${
-        window.location.hash
-      }`;
-      window.history.replaceState(null, "", next);
-    }
+    if (updateUrl) saveViewUrl();
     updateStats();
     renderDetails();
     if (fit) refitCurrent({ animate });
     requestRender();
+  }
+
+  function saveViewUrl() {
+    const next = `${window.location.pathname}${core.stateToSearch(state.view, state.graph)}${
+      window.location.hash
+    }`;
+    window.history.replaceState(null, "", next);
   }
 
   function updateStats() {
@@ -772,7 +783,8 @@
     drawGrid(transform);
     if (!state.filtered) return;
     const selectedIds = new Set(state.view.selectedIds);
-    const schoolRegions = state.view.layout === "department-force" && !selectedIds.size
+    const schoolRegions = state.view.showSchoolOutlines
+      && state.view.layout === "department-force" && !selectedIds.size
       ? visibleSchoolRegions(now, transform) : [];
     if (schoolRegions.length > 1) drawSchoolRegions(schoolRegions);
     const emphasisIds = selectedIds.size
@@ -878,7 +890,7 @@
 
     const occupied = [];
     if (schoolRegions.length > 1) drawSchoolLabels(schoolRegions, occupied);
-    if (isDepartmentLayout() && !selectedIds.size) {
+    if (state.view.showHomeOutlines && isDepartmentLayout() && !selectedIds.size) {
       drawDepartmentLabels(occupied, now, transform);
     }
     const labelPriority = (node) =>
@@ -1828,6 +1840,16 @@
     elements.crossSchool.addEventListener("change", () => {
       state.view.crossSchool = elements.crossSchool.checked;
       applyView({ fit: true, animate: true });
+    });
+    elements.showSchoolOutlines.addEventListener("change", () => {
+      state.view.showSchoolOutlines = elements.showSchoolOutlines.checked;
+      saveViewUrl();
+      requestRender();
+    });
+    elements.showHomeOutlines.addEventListener("change", () => {
+      state.view.showHomeOutlines = elements.showHomeOutlines.checked;
+      saveViewUrl();
+      requestRender();
     });
     elements.showUnconnected.addEventListener("change", () => {
       state.view.showUnconnected = elements.showUnconnected.checked;
