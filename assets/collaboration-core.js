@@ -10,6 +10,7 @@
   const EXTERNAL_LAYOUT_GROUP = "__external_coauthors__";
   const UNRESOLVED_LAYOUT_GROUP = "__primary_unresolved__";
   const ACADEMIC_UNIT_TYPES = new Set(["department", "constituent_school", "institute"]);
+  const HOME_UNIT_TYPES = new Set([...ACADEMIC_UNIT_TYPES, "campus"]);
 
   function academicHomeGroup(type, id) {
     return type === "school" || type === "academic_area" ? `${type}:${id}` : id;
@@ -126,7 +127,7 @@
       [department.department_id, department]));
     const sourceHomes = Array.isArray(input.academic_homes)
       ? input.academic_homes
-      : departments.filter((department) => ACADEMIC_UNIT_TYPES.has(department.unit_type))
+      : departments.filter((department) => HOME_UNIT_TYPES.has(department.unit_type))
         .map((department) => ({
           home_group: department.department_id,
           home_type: department.unit_type,
@@ -143,11 +144,11 @@
       const group = academicHomeGroup(type, id);
       assert(id && group === String(home.home_group || ""),
         `Invalid primary academic home group: ${group}`);
-      assert(ACADEMIC_UNIT_TYPES.has(type) || ["academic_area", "school"].includes(type),
+      assert(HOME_UNIT_TYPES.has(type) || ["academic_area", "school"].includes(type),
         `Invalid primary academic home type: ${type}`);
       const schoolId = String(home.school_id || "");
       assert(schoolIds.has(schoolId), `Primary home ${group} has an invalid school`);
-      if (ACADEMIC_UNIT_TYPES.has(type)) {
+      if (HOME_UNIT_TYPES.has(type)) {
         assert(departmentById.get(id)?.unit_type === type
           && departmentById.get(id)?.school_id === schoolId,
         `Primary home ${group} is not a matching academic unit`);
@@ -215,9 +216,9 @@
         String(node.primary_academic_home_title || "") === home.title
         && String(node.primary_academic_home_school_id || "") === home.school_id
       ), `Faculty ${id} has inconsistent primary academic home details`);
-      if (ACADEMIC_UNIT_TYPES.has(homeType)) {
-        assert(academicDepartments.includes(homeId),
-          `Faculty ${id} has a primary academic unit outside their memberships`);
+      if (HOME_UNIT_TYPES.has(homeType)) {
+        assert(departmentsForNode.includes(homeId),
+          `Faculty ${id} has a primary home unit outside their memberships`);
       } else if (homeType === "school") {
         assert(departmentsForNode.some((departmentId) =>
           departmentById.get(departmentId).school_id === homeId
