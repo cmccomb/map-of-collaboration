@@ -148,6 +148,17 @@ test("deriveGraph creates evidence-backed edges and coverage counts", () => {
   });
 });
 
+test("deriveGraph carries a person-scoped publication hold without hiding other researchers' works", () => {
+  const artifact = artifactFixture();
+  artifact.catalogs.faculty[2].publication_hold_reason = "Publication history pending full capture";
+  const graph = build.deriveGraph(artifact, config, "a".repeat(40));
+  assert.equal(graph.nodes.find((node) => node.id === "c").publication_hold_reason,
+    "Publication history pending full capture");
+  assert.equal(graph.nodes.find((node) => node.id === "a").publication_hold_reason, "");
+  assert.equal(graph.edges.length, 1);
+  assert.equal(graph.counts.work_count, 2);
+});
+
 test("deriveGraph preserves researcher bibliography provenance without changing Scholar-only works", () => {
   const authorArtifact = artifactFixture();
   authorArtifact.points[0].source_types = ["author_site"];

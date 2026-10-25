@@ -1256,9 +1256,20 @@
     elements.detailContent.append(metrics);
   }
 
-  function appendMathScholarCoverage(nodes) {
+  function appendPublicationCoverage(nodes) {
+    const held = nodes.filter((node) => node.kind === "faculty" && node.publication_hold_reason);
+    for (const node of held) {
+      const note = element("div", "detail-coverage");
+      note.setAttribute("role", "note");
+      note.append(
+        element("strong", "", nodes.length > 1 ? `${node.name}:` : "Publication coverage"),
+        element("p", "", node.publication_hold_reason),
+      );
+      elements.detailContent.append(note);
+    }
     const unresolved = nodes.filter((node) =>
-      node.kind === "faculty" && node.departments.includes("math") && !node.scholar_url);
+      node.kind === "faculty" && node.departments.includes("math")
+      && !node.scholar_url && !node.publication_hold_reason);
     if (!unresolved.length) return;
     const note = element("div", "detail-coverage");
     note.setAttribute("role", "note");
@@ -1333,7 +1344,7 @@
     }
     if (links.children.length) header.append(links);
     elements.detailContent.append(header);
-    appendMathScholarCoverage([node]);
+    appendPublicationCoverage([node]);
 
     appendDetailMetrics([
       [filteredNode.degree, "visible collaborators"],
@@ -1394,7 +1405,7 @@
     }
     header.append(roster);
     elements.detailContent.append(header);
-    appendMathScholarCoverage(selectedNodes);
+    appendPublicationCoverage(selectedNodes);
 
     appendDetailMetrics([
       [selectedNodes.length, hasExternalCoauthors() ? "selected people" : "selected faculty"],
