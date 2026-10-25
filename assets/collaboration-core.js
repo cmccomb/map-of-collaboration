@@ -66,6 +66,7 @@
     }[node.primary_academic_home_basis] || "display choice";
     const typeLabel = {
       department: "department",
+      campus: "campus",
       constituent_school: "constituent school",
       institute: "institute",
       academic_area: "academic area",
