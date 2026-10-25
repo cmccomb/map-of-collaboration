@@ -148,6 +148,35 @@ test("deriveGraph creates evidence-backed edges and coverage counts", () => {
   });
 });
 
+test("deriveGraph preserves researcher bibliography provenance without changing Scholar-only works", () => {
+  const authorArtifact = artifactFixture();
+  authorArtifact.points[0].source_types = ["author_site"];
+  authorArtifact.points[0].citation_count = 0;
+  authorArtifact.points[0].source_url = "https://example.com/researcher/publications";
+  authorArtifact.points[0].source_verified_at = "2026-10-25";
+  authorArtifact.points[0].source_verification_urls = ["https://example.com/researcher/publications"];
+  const authorWork = build.deriveGraph(authorArtifact, config, "a".repeat(40)).edges[0].works[0];
+  assert.deepEqual(authorWork.source_types, ["author_site"]);
+  assert.equal(authorWork.url, "https://example.com/researcher/publications");
+  assert.equal(authorWork.source_verified_at, "2026-10-25");
+  assert.deepEqual(authorWork.source_verification_urls,
+    ["https://example.com/researcher/publications"]);
+  assert.equal(authorWork.topic, "");
+
+  const scholarArtifact = artifactFixture();
+  scholarArtifact.points[0].source_types = ["scholar"];
+  const scholarWork = build.deriveGraph(scholarArtifact, config, "a".repeat(40)).edges[0].works[0];
+  assert.equal(Object.hasOwn(scholarWork, "source_types"), false);
+  assert.equal(scholarWork.citations, 4);
+  assert.equal(scholarWork.topic, "Design systems");
+
+  scholarArtifact.points[0].source_types = ["scholar", "author_site"];
+  const corroboratedWork = build.deriveGraph(scholarArtifact, config, "a".repeat(40)).edges[0].works[0];
+  assert.deepEqual(corroboratedWork.source_types, ["scholar", "author_site"]);
+  assert.equal(corroboratedWork.citations, 4);
+  assert.equal(corroboratedWork.topic, "Design systems");
+});
+
 test("mapped patents, edited books, and panel transcripts do not create coauthor edges", () => {
   const artifact = artifactFixture();
   const original = artifact.points[0];

@@ -1256,7 +1256,7 @@
     note.append(element(
       "p",
       "",
-      "Scholar account unresolved; mapped works are observed records, not a complete publication history.",
+      "Scholar account unresolved; mapped works come from available source records, so full publication coverage is unverified.",
     ));
     elements.detailContent.append(note);
   }
@@ -1447,6 +1447,7 @@
   function renderPublications(connection) {
     const list = element("ol", "publication-list");
     for (const work of connection.works) {
+      const provenance = core.publicationProvenance(work.source_types);
       const item = element("li");
       if (work.url) {
         const link = element("a", "", work.title);
@@ -1460,16 +1461,10 @@
       const details = [
         Number.isInteger(work.year) ? work.year : "Undated",
         work.topic,
-        work.citations ? plural(work.citations, "citation") : "",
-        work.source_types?.includes("curated_verified")
-          && !work.source_types.includes("scholar")
-          ? "Citation count unavailable"
-          : "",
-        work.source_types?.includes("curated_verified")
-          ? work.source_types.includes("scholar")
-            ? "Scholar record and source verified"
-            : "Source verified; not collected from Google Scholar"
-          : "",
+        !provenance.citationCountUnavailable && work.citations
+          ? plural(work.citations, "citation") : "",
+        provenance.citationCountUnavailable ? "Citation count unavailable" : "",
+        provenance.label,
         work.source_verified_at ? `verified ${work.source_verified_at}` : "",
       ].filter(Boolean);
       item.append(element("span", "publication-meta", details.join(" · ")));

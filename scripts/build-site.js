@@ -620,7 +620,8 @@ function deriveGraph(artifact, config, revision) {
       citations: Math.max(0, Number(point.citation_count) || 0),
       doi: String(point.doi || ""),
       url: safeSourceUrl(point),
-      ...(Array.isArray(point.source_types) && point.source_types.includes("curated_verified")
+      ...(Array.isArray(point.source_types)
+        && point.source_types.some((type) => type === "curated_verified" || type === "author_site")
         ? { source_types: [...new Set(point.source_types.map(String))] }
         : {}),
       ...(point.source_verified_at
@@ -629,7 +630,8 @@ function deriveGraph(artifact, config, revision) {
       ...(Array.isArray(point.source_verification_urls) && point.source_verification_urls.length
         ? { source_verification_urls: [...new Set(point.source_verification_urls.map(String))] }
         : {}),
-      topic: point.source_types?.includes("curated_verified")
+      topic: (point.source_types?.includes("curated_verified")
+        || point.source_types?.includes("author_site"))
         && !point.source_types.includes("scholar")
         ? ""
         : String(keywordById.get(detailedTopicId) || ""),

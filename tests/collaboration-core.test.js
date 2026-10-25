@@ -89,6 +89,37 @@ function fixture() {
   };
 }
 
+test("publication provenance distinguishes Scholar and researcher bibliography evidence", () => {
+  assert.deepEqual(core.publicationProvenance([]), {
+    citationCountUnavailable: false,
+    label: "",
+  });
+  assert.deepEqual(core.publicationProvenance(["curated_verified"]), {
+    citationCountUnavailable: true,
+    label: "Source verified; not collected from Google Scholar",
+  });
+  assert.deepEqual(core.publicationProvenance(["author_site"]), {
+    citationCountUnavailable: true,
+    label: "Researcher bibliography; not collected from Google Scholar",
+  });
+  assert.deepEqual(core.publicationProvenance(["author_site", "curated_verified"]), {
+    citationCountUnavailable: true,
+    label: "Researcher bibliography and source verified; not collected from Google Scholar",
+  });
+  assert.deepEqual(core.publicationProvenance(["scholar", "author_site"]), {
+    citationCountUnavailable: false,
+    label: "Scholar record and researcher bibliography",
+  });
+  assert.deepEqual(core.publicationProvenance(["scholar", "curated_verified"]), {
+    citationCountUnavailable: false,
+    label: "Scholar record and source verified",
+  });
+  assert.deepEqual(core.publicationProvenance(["scholar", "author_site", "curated_verified"]), {
+    citationCountUnavailable: false,
+    label: "Scholar record, researcher bibliography and source verified",
+  });
+});
+
 function schoolFixture() {
   const value = fixture();
   value.schools = [
