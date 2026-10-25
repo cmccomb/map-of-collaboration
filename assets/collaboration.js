@@ -1178,6 +1178,23 @@
     elements.detailContent.append(metrics);
   }
 
+  function appendMathScholarCoverage(nodes) {
+    const unresolved = nodes.filter((node) =>
+      node.kind === "faculty" && node.departments.includes("math") && !node.scholar_url);
+    if (!unresolved.length) return;
+    const note = element("div", "detail-coverage");
+    note.setAttribute("role", "note");
+    if (nodes.length > 1) {
+      note.append(element("strong", "", `${unresolved.map((node) => node.name).join(", ")}:`));
+    }
+    note.append(element(
+      "p",
+      "",
+      "Scholar account unresolved; mapped works are observed records, not a complete publication history.",
+    ));
+    elements.detailContent.append(note);
+  }
+
   function renderSingleFacultyDetails(nodeId) {
     const node = state.graph.nodeById.get(nodeId);
     if (!node) return;
@@ -1238,6 +1255,7 @@
     }
     if (links.children.length) header.append(links);
     elements.detailContent.append(header);
+    appendMathScholarCoverage([node]);
 
     appendDetailMetrics([
       [filteredNode.degree, "visible collaborators"],
@@ -1298,6 +1316,7 @@
     }
     header.append(roster);
     elements.detailContent.append(header);
+    appendMathScholarCoverage(selectedNodes);
 
     appendDetailMetrics([
       [selectedNodes.length, hasExternalCoauthors() ? "selected people" : "selected faculty"],
@@ -1464,7 +1483,7 @@
             "small",
             "",
             node.mapped_publication_count
-              ? `${department} · ${formatNumber(node.mapped_publication_count)} works`
+              ? `${department} · ${plural(node.mapped_publication_count, "mapped work")}`
               : `${department} · no mapped works`,
           ),
         );
