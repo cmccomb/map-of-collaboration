@@ -34,6 +34,29 @@
     return [...new Set((Array.isArray(values) ? values : []).map(String))];
   }
 
+  function publicationProvenance(sourceTypes) {
+    const types = uniqueStrings(sourceTypes);
+    const scholar = types.includes("scholar");
+    const authorSite = types.includes("author_site");
+    const curated = types.includes("curated_verified");
+    const sources = [
+      scholar ? "Scholar record" : "",
+      authorSite ? "researcher bibliography" : "",
+      curated ? "source verified" : "",
+    ].filter(Boolean);
+    const label = sources.length
+      ? sources.length === 1
+        ? sources[0]
+        : `${sources.slice(0, -1).join(", ")} and ${sources.at(-1)}`
+      : "";
+    const displayLabel = label ? `${label[0].toUpperCase()}${label.slice(1)}` : "";
+    return {
+      citationCountUnavailable: !scholar && (authorSite || curated),
+      label: displayLabel && !scholar
+        ? `${displayLabel}; not collected from Google Scholar` : displayLabel,
+    };
+  }
+
   function edgeKey(left, right) {
     return String(left) < String(right)
       ? `${left}|${right}`
@@ -1375,6 +1398,7 @@
     layoutDepartmentId,
     normalizeView,
     parseGraph,
+    publicationProvenance,
     safeExternalUrl,
     scopeEligible,
     selectionLayout,
