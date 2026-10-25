@@ -79,6 +79,7 @@
     suggestionNodes: [],
     drag: null,
     layoutPositions: new Map(),
+    gridNearestDistances: new Map(),
     layoutDepartments: new Map(),
     transition: null,
     renderQueued: false,
@@ -575,6 +576,8 @@
       (state.filtered?.nodes || []).map((node) => [node.id, displayPosition(node, now)]),
     );
     const fromTransform = displayTransform(now);
+    state.gridNearestDistances = state.view.layout === "departments"
+      ? core.nearestPositionDistances(toPositions) : new Map();
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (!animate || reducedMotion) {
       state.layoutPositions = toPositions;
@@ -728,8 +731,11 @@
     };
   }
 
-  function nodeRadius(node) {
-    return Math.min(9, 3.1 + Math.sqrt(Math.max(0, node.strength || 0)) * 0.42);
+  function nodeRadius(node, transform = displayTransform()) {
+    const radius = Math.min(9, 3.1 + Math.sqrt(Math.max(0, node.strength || 0)) * 0.42);
+    return state.view.layout === "departments"
+      ? core.gridDotRadius(radius, state.gridNearestDistances.get(node.id), transform.k)
+      : radius;
   }
 
   function requestRender() {
@@ -869,7 +875,7 @@
       if (point.x < -20 || point.x > state.width + 20 || point.y < -20 || point.y > state.height + 20) {
         continue;
       }
-      const radius = nodeRadius(node);
+      const radius = nodeRadius(node, transform);
       const related = !emphasisIds.size || neighborIds.has(node.id);
       const mappedConnection = node.degree || node.hidden_external_connection;
       context.globalAlpha = related ? (mappedConnection ? 0.94 : 0.42) : 0.13;
@@ -1073,7 +1079,7 @@
     context.font = "600 11px Inter, ui-sans-serif, system-ui, sans-serif";
     const width = Math.ceil(context.measureText(node.name).width) + 13;
     const height = 22;
-    const radius = nodeRadius(node);
+    const radius = nodeRadius(node, transform);
     const selectedPoints = state.view.selectedIds
       .map((id) => state.filtered.nodeById.get(id))
       .filter(Boolean)
@@ -1154,7 +1160,7 @@
     for (const node of state.filtered?.nodes || []) {
       const point = worldToScreen(node, now, transform);
       const distance = Math.hypot(point.x - x, point.y - y);
-      const hitRadius = Math.max(10, nodeRadius(node) + 4);
+      const hitRadius = Math.max(10, nodeRadius(node, transform) + 4);
       if (distance <= hitRadius && distance < closestDistance) {
         closest = node;
         closestDistance = distance;
