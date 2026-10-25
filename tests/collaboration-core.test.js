@@ -732,6 +732,8 @@ test("URL state is bounded and round-trips", () => {
     crossSchool: false,
     showExternal: false,
     showUnconnected: true,
+    showSchoolOutlines: true,
+    showHomeOutlines: true,
     layout: "department-force",
     departmentSpacing: 5,
     schoolSpacing: 0,
@@ -760,6 +762,72 @@ test("URL state is bounded and round-trips", () => {
     "",
   );
   assert.deepEqual(core.validFacultyIds("a", graph), ["a"]);
+});
+
+test("school and academic-home outline choices round-trip independently in both home layouts", () => {
+  const graph = core.parseGraph(schoolFixture());
+  const defaults = core.defaultState(graph);
+  assert.equal(defaults.showSchoolOutlines, true);
+  assert.equal(defaults.showHomeOutlines, true);
+  assert.equal(core.stateToSearch(defaults, graph), "");
+
+  for (const layout of ["department-force", "departments"]) {
+    for (const showSchoolOutlines of [true, false]) {
+      for (const showHomeOutlines of [true, false]) {
+        const requested = { ...defaults, layout, showSchoolOutlines, showHomeOutlines };
+        const url = core.stateToSearch(requested, graph);
+        const params = new URLSearchParams(url);
+        assert.equal(params.get("layout"), layout);
+        assert.equal(params.get("school_outlines"), showSchoolOutlines ? null : "0");
+        assert.equal(params.get("home_outlines"), showHomeOutlines ? null : "0");
+        assert.deepEqual(core.stateFromSearch(url, graph), requested);
+      }
+    }
+  }
+  assert.equal(core.stateFromSearch("?school_outlines=invalid&home_outlines=invalid", graph)
+    .showSchoolOutlines, true);
+  assert.equal(core.stateFromSearch("?school_outlines=invalid&home_outlines=invalid", graph)
+    .showHomeOutlines, true);
+});
+
+test("outline visibility changes neither graph data nor school region membership", () => {
+  const graph = core.parseGraph(schoolGridFixture());
+  const defaults = core.defaultState(graph);
+  for (const layout of ["department-force", "departments"]) {
+    const visible = { ...defaults, layout };
+    const filtered = core.filterGraph(graph, visible);
+    const positions = layout === "department-force"
+      ? core.departmentForceLayout(filtered, graph, visible.departmentSpacing, [], visible.schoolSpacing)
+      : core.departmentGridLayout(filtered, graph);
+    const assignments = core.forceDepartmentAssignments(filtered, graph, visible.schoolSpacing);
+    const regions = core.schoolLayoutRegions(filtered, graph, positions, assignments);
+    assert.deepEqual(regions.map(({ school_id, count }) => [school_id, count]), [
+      ["engineering", 3],
+      ["scs", 2],
+    ]);
+    assert.equal(assignments.get("e"), "one");
+
+    for (const showSchoolOutlines of [true, false]) {
+      for (const showHomeOutlines of [true, false]) {
+        const view = core.stateFromSearch(core.stateToSearch({
+          ...visible, showSchoolOutlines, showHomeOutlines,
+        }, graph), graph);
+        const current = core.filterGraph(graph, view);
+        const currentPositions = layout === "department-force"
+          ? core.departmentForceLayout(current, graph, view.departmentSpacing, [], view.schoolSpacing)
+          : core.departmentGridLayout(current, graph);
+        const currentAssignments = core.forceDepartmentAssignments(
+          current, graph, view.schoolSpacing,
+        );
+        assert.deepEqual(current, filtered);
+        assert.deepEqual(currentPositions, positions);
+        assert.deepEqual(currentAssignments, assignments);
+        assert.deepEqual(core.schoolLayoutRegions(
+          current, graph, currentPositions, currentAssignments,
+        ), regions);
+      }
+    }
+  }
 });
 
 test("faculty search considers names and departments", () => {

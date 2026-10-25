@@ -709,6 +709,12 @@ input[type="number"]:focus {
   border-top: 1px solid var(--line);
 }
 
+.outline-controls {
+  margin-top: 0.18rem;
+  padding-top: 0.18rem;
+  border-top: 1px solid var(--line);
+}
+
 .check-row input {
   margin-top: 0.2rem;
 }
