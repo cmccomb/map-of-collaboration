@@ -195,6 +195,59 @@ test("school filters keep both CMU endpoints in scope and preserve department li
   assert.deepEqual(unconnected.nodes.map((node) => node.id), ["c"]);
 });
 
+test("a campus home groups Silicon Valley faculty within Engineering", () => {
+  const value = schoolFixture();
+  value.departments.push({
+    department_id: "cmu-silicon-valley",
+    title: "CMU Silicon Valley",
+    short_title: "Silicon Valley",
+    school_id: "engineering",
+    unit_type: "campus",
+  });
+  value.nodes.push({
+    id: "sv",
+    name: "Karimulla Shaikh",
+    departments: ["cmu-silicon-valley"],
+    primary_department: "",
+    school_ids: ["engineering"],
+    primary_academic_home_type: "campus",
+    primary_academic_home_id: "cmu-silicon-valley",
+    primary_academic_home_title: "CMU Silicon Valley",
+    primary_academic_home_school_id: "engineering",
+    primary_academic_home_basis: "reviewed",
+    x: 0.2,
+    y: 0.7,
+  });
+  const graph = core.parseGraph(value);
+  const campusNode = graph.nodeById.get("sv");
+  assert.equal(graph.academicHomeByGroup.get("cmu-silicon-valley").home_type, "campus");
+  assert.equal(campusNode.primary_home_group, "cmu-silicon-valley");
+  assert.equal(campusNode.primary_department, "");
+  assert.equal(campusNode.primary_school, "engineering");
+  assert.deepEqual(campusNode.academic_departments, []);
+  for (const layout of ["collaboration", "department-force", "departments"]) {
+    const suffix = layout === "collaboration" ? "" : `&layout=${layout}`;
+    const engineering = core.stateFromSearch(`?schools=engineering&unconnected=1${suffix}`, graph);
+    assert(core.filterGraph(graph, engineering).nodes.some((node) => node.id === "sv"));
+    assert.equal(core.layoutDepartmentId(campusNode, [], graph, engineering.schools), "cmu-silicon-valley");
+    const scs = core.stateFromSearch(`?schools=scs&unconnected=1${suffix}`, graph);
+    assert(!core.filterGraph(graph, scs).nodes.some((node) => node.id === "sv"));
+  }
+
+  const explicit = structuredClone(value);
+  explicit.academic_homes = graph.academic_homes.map((home) => ({ ...home }));
+  assert.equal(core.parseGraph(explicit).nodeById.get("sv").primary_academic_home_type, "campus");
+  const missingMembership = structuredClone(explicit);
+  missingMembership.nodes.at(-1).departments = ["one"];
+  assert.throws(() => core.parseGraph(missingMembership), /outside their memberships/);
+  const wrongUnitType = structuredClone(explicit);
+  wrongUnitType.departments.at(-1).unit_type = "department";
+  assert.throws(() => core.parseGraph(wrongUnitType), /not a matching academic unit/);
+  const legacyConflict = structuredClone(explicit);
+  legacyConflict.nodes.at(-1).primary_department = "cmu-silicon-valley";
+  assert.throws(() => core.parseGraph(legacyConflict), /legacy primary department inconsistent/);
+});
+
 test("all layouts keep selected-school faculty and fold cross appointments", () => {
   const graph = core.parseGraph(schoolGridFixture());
   assert.equal(core.schoolEligible(graph, graph.nodeById.get("a"), ["scs"]), false);

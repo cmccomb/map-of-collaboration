@@ -227,7 +227,46 @@ test("legacy campus-only affiliation stays unresolved while CMU-Africa is eligib
     { department_id: "cmu-silicon-valley", role: "teaching" },
   );
   assert.throws(() => build.deriveGraph(artifact, config, "a".repeat(40)),
-    /invalid primary academic home type/);
+    /legacy primary department inconsistent/);
+});
+
+test("typed Silicon Valley campus home survives graph generation and excludes adjunct membership", () => {
+  const artifact = schoolArtifactFixture();
+  artifact.catalogs.departments.push(
+    { department_id: "cmu-silicon-valley", school_id: "engineering",
+      title: "CMU Silicon Valley", unit_type: "campus" },
+    { department_id: "iii", school_id: "engineering",
+      title: "Integrated Innovation Institute", unit_type: "institute" },
+  );
+  const person = artifact.catalogs.faculty[2];
+  person.memberships = [
+    { department_id: "cmu-silicon-valley", role: "teaching" },
+    { department_id: "iii", role: "adjunct", included: false },
+  ];
+  Object.assign(person, {
+    primary_department_id: "",
+    primary_academic_home_type: "campus",
+    primary_academic_home_id: "cmu-silicon-valley",
+    primary_academic_home_title: "CMU Silicon Valley",
+    primary_academic_home_school_id: "engineering",
+    primary_academic_home_basis: "reviewed",
+    primary_academic_home_source_url: "https://www.cmu.edu/silicon-valley/",
+    primary_academic_home_verified_at: "2026-10-24",
+  });
+  const graph = build.deriveGraph(artifact, config, "a".repeat(40));
+  const node = graph.nodes.find((item) => item.id === "c");
+  assert.deepEqual(node.departments, ["cmu-silicon-valley"]);
+  assert.equal(node.primary_department, "");
+  assert.equal(node.primary_home_group, "cmu-silicon-valley");
+  assert.deepEqual(node.school_ids, ["engineering"]);
+  assert.equal(graph.academic_homes.find((home) => home.home_group === "cmu-silicon-valley").home_type,
+    "campus");
+  const parsed = core.parseGraph(graph);
+  assert.equal(parsed.nodeById.get("c").primary_academic_home_type, "campus");
+  assert.deepEqual(parsed.nodeById.get("c").academic_departments, []);
+
+  person.memberships[0].included = false;
+  assert.throws(() => build.deriveGraph(artifact, config, "a".repeat(40)), /no included department/);
 });
 
 test("typed academic homes separate school fallbacks, areas, institutes, and unresolved cases", () => {

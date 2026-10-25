@@ -49,6 +49,7 @@ const SCHOOL_PRESENTATION = Object.freeze({
   tepper: { color_dark: "#d5b4f5", color_light: "#794caa" },
 });
 const ACADEMIC_UNIT_TYPES = new Set(["department", "constituent_school", "institute"]);
+const HOME_UNIT_TYPES = new Set([...ACADEMIC_UNIT_TYPES, "campus"]);
 const ROSTER_CONTAINER_IDS = new Set(["heinz-faculty", "tepper-faculty"]);
 
 function academicHomeGroup(type, id) {
@@ -318,7 +319,7 @@ function deriveGraph(artifact, config, revision) {
     const id = String(department.department_id);
     const unitType = String(department.unit_type || (ROSTER_CONTAINER_IDS.has(id)
       ? "roster_container" : id === "cmu-silicon-valley" ? "campus" : "department"));
-    assert(ACADEMIC_UNIT_TYPES.has(unitType) || ["roster_container", "campus"].includes(unitType),
+    assert(HOME_UNIT_TYPES.has(unitType) || unitType === "roster_container",
       `Department ${id} has an invalid unit type`);
     const presentation = academicHomePresentation(unitType, id, department.school_id);
     return {
@@ -356,7 +357,7 @@ function deriveGraph(artifact, config, revision) {
     department.school_id = schoolId;
   });
   const academicHomeByGroup = new Map(departments
-    .filter((department) => ACADEMIC_UNIT_TYPES.has(department.unit_type))
+    .filter((department) => HOME_UNIT_TYPES.has(department.unit_type))
     .map((department) => [department.department_id, {
       home_group: department.department_id,
       home_type: department.unit_type,
@@ -389,6 +390,7 @@ function deriveGraph(artifact, config, revision) {
     const personDepartments = [
       ...new Set(
         memberships
+          .filter((membership) => membership?.included !== false)
           .map((membership) => String(membership.department_id || ""))
           .filter((departmentId) => departmentIds.has(departmentId)),
       ),
@@ -407,7 +409,7 @@ function deriveGraph(artifact, config, revision) {
       : legacyPrimaryId || inferredId;
     const homeType = hasTypedHome ? String(person.primary_academic_home_type || "unresolved").trim()
       : homeId ? departmentById.get(homeId)?.unit_type || "department" : "unresolved";
-    assert(homeType === "unresolved" || ACADEMIC_UNIT_TYPES.has(homeType)
+    assert(homeType === "unresolved" || HOME_UNIT_TYPES.has(homeType)
       || ["academic_area", "school"].includes(homeType),
     `Faculty ${id} has an invalid primary academic home type`);
     assert((homeType === "unresolved") === !homeId,
@@ -418,10 +420,10 @@ function deriveGraph(artifact, config, revision) {
       : homeId ? departmentById.get(homeId)?.title || "" : "";
     if (homeId) {
       assert(schoolIds.has(homeSchoolId), `Faculty ${id} has an invalid primary home school`);
-      if (ACADEMIC_UNIT_TYPES.has(homeType)) {
-        assert(academicMemberships.includes(homeId)
+      if (HOME_UNIT_TYPES.has(homeType)) {
+        assert(personDepartments.includes(homeId)
           && departmentById.get(homeId)?.unit_type === homeType,
-        `Faculty ${id} has a primary academic unit outside their memberships`);
+        `Faculty ${id} has a primary home unit outside their memberships`);
         assert(homeTitle === departmentById.get(homeId).title
           && homeSchoolId === departmentById.get(homeId).school_id,
         `Faculty ${id} has an inconsistent primary academic unit`);
