@@ -772,6 +772,9 @@
     drawGrid(transform);
     if (!state.filtered) return;
     const selectedIds = new Set(state.view.selectedIds);
+    const schoolRegions = state.view.layout === "department-force" && !selectedIds.size
+      ? visibleSchoolRegions(now, transform) : [];
+    if (schoolRegions.length > 1) drawSchoolRegions(schoolRegions);
     const emphasisIds = selectedIds.size
       ? selectedIds
       : new Set(state.hoveredId ? [state.hoveredId] : []);
@@ -874,6 +877,7 @@
     context.globalAlpha = 1;
 
     const occupied = [];
+    if (schoolRegions.length > 1) drawSchoolLabels(schoolRegions, occupied);
     if (isDepartmentLayout() && !selectedIds.size) {
       drawDepartmentLabels(occupied, now, transform);
     }
@@ -895,6 +899,67 @@
       );
     }
     if (state.transition) requestRender();
+  }
+
+  function visibleSchoolRegions(now, transform) {
+    const positions = new Map(state.filtered.nodes.map((node) => [
+      node.id, displayPosition(node, now),
+    ]));
+    return core.schoolLayoutRegions(
+      state.filtered, state.graph, positions, state.layoutDepartments,
+    ).map((region) => {
+      const width = Math.max(132, (region.maxX - region.minX) * transform.k + 48);
+      const height = Math.max(74, (region.maxY - region.minY) * transform.k + 48);
+      const centerX = transform.x + (region.minX + region.maxX) * transform.k / 2;
+      const centerY = transform.y + (region.minY + region.maxY) * transform.k / 2;
+      return {
+        ...region,
+        x: centerX - width / 2,
+        y: centerY - height / 2,
+        width,
+        height,
+      };
+    });
+  }
+
+  function drawSchoolRegions(regions) {
+    context.lineWidth = 1;
+    for (const region of regions) {
+      roundedRect(context, region.x, region.y, region.width, region.height, 18);
+      context.fillStyle = css("--canvas-school-fill");
+      context.fill();
+      context.strokeStyle = css("--canvas-school-outline");
+      context.stroke();
+    }
+  }
+
+  function drawSchoolLabels(regions, occupied) {
+    const viewport = effectiveViewport();
+    context.font = "700 12px Inter, ui-sans-serif, system-ui, sans-serif";
+    for (const region of regions) {
+      const width = Math.min(245, Math.ceil(context.measureText(region.title).width) + 22);
+      const height = 25;
+      const rect = {
+        x: Math.max(viewport.left + 6,
+          Math.min(viewport.right - width - 6, region.x + region.width / 2 - width / 2)),
+        y: Math.max(viewport.top + 6,
+          Math.min(viewport.bottom - height - 6, region.y + 5)),
+        width, height,
+      };
+      occupied.push(rect);
+      context.fillStyle = css("--tooltip");
+      roundedRect(context, rect.x, rect.y, rect.width, rect.height, 999);
+      context.fill();
+      context.strokeStyle = css("--canvas-school-outline");
+      context.lineWidth = 1.5;
+      context.stroke();
+      context.fillStyle = css("--text");
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText(region.title, rect.x + rect.width / 2,
+        rect.y + rect.height / 2 + 0.5, rect.width - 14);
+      context.textAlign = "start";
+    }
   }
 
   function drawDepartmentLabels(occupied, now, transform) {
