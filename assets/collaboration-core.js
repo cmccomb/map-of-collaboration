@@ -1111,8 +1111,35 @@
       current = [...remaining].sort((left, right) => compareDepartments(left, right, current))[0];
     }
 
-    const positions = new Map();
     const departmentCount = orderedDepartmentIds.length;
+    const gridSize = new Map(orderedDepartmentIds.map((departmentId) => {
+      const count = groups.get(departmentId).length;
+      const columns = Math.max(1, Math.ceil(Math.sqrt(count)));
+      const rows = Math.max(1, Math.ceil(count / columns));
+      const spacing = Math.min(0.075, 0.42 / Math.max(1, columns - 1, rows - 1));
+      return [departmentId, { columns, rows, spacing,
+        radius: Math.hypot((columns - 1) * spacing, (rows - 1) * spacing) / 2 }];
+    }));
+    // Keep the established ring order, but make its radius large enough that
+    // neighboring academic-home grids cannot place people on top of each other.
+    const ringPoint = (index) => {
+      const angle = departmentCount === 2
+        ? index === 0 ? Math.PI : 0
+        : -Math.PI / 2 + (index / departmentCount) * Math.PI * 2;
+      return { x: Math.cos(angle) * 1.3, y: Math.sin(angle) * 0.98 };
+    };
+    let ringScale = 1;
+    for (let left = 0; left < departmentCount; left += 1) {
+      for (let right = left + 1; right < departmentCount; right += 1) {
+        const leftPoint = ringPoint(left);
+        const rightPoint = ringPoint(right);
+        const distance = Math.hypot(leftPoint.x - rightPoint.x, leftPoint.y - rightPoint.y);
+        const required = gridSize.get(orderedDepartmentIds[left]).radius
+          + gridSize.get(orderedDepartmentIds[right]).radius + 0.04;
+        ringScale = Math.max(ringScale, required / distance);
+      }
+    }
+    const positions = new Map();
     orderedDepartmentIds.forEach((departmentId, departmentIndex) => {
       const angle =
         departmentCount === 1
@@ -1122,10 +1149,10 @@
               ? Math.PI
               : 0
             : -Math.PI / 2 + (departmentIndex / departmentCount) * Math.PI * 2;
-      const center =
-        departmentCount === 1
-          ? { x: 0, y: 0 }
-          : { x: Math.cos(angle) * 1.3, y: Math.sin(angle) * 0.98 };
+      const point = ringPoint(departmentIndex);
+      const center = departmentCount === 1
+        ? { x: 0, y: 0 }
+        : { x: point.x * ringScale, y: point.y * ringScale };
       const inward = { x: -Math.cos(angle), y: -Math.sin(angle) };
       const tangent = { x: -inward.y, y: inward.x };
       const nodes = [...groups.get(departmentId)].sort(
@@ -1135,9 +1162,7 @@
           right.degree - left.degree ||
           left.id.localeCompare(right.id),
       );
-      const columns = Math.max(1, Math.ceil(Math.sqrt(nodes.length)));
-      const rows = Math.max(1, Math.ceil(nodes.length / columns));
-      const spacing = Math.min(0.075, 0.42 / Math.max(1, columns - 1, rows - 1));
+      const { columns, rows, spacing } = gridSize.get(departmentId);
 
       nodes.forEach((node, index) => {
         const row = Math.floor(index / columns);
@@ -1152,6 +1177,27 @@
       });
     });
     return positions;
+  }
+
+  function nearestPositionDistances(positions) {
+    const points = [...positions];
+    const nearest = new Map(points.map(([id]) => [id, Infinity]));
+    for (let left = 0; left < points.length; left += 1) {
+      for (let right = left + 1; right < points.length; right += 1) {
+        const distance = Math.hypot(
+          points[left][1].x - points[right][1].x,
+          points[left][1].y - points[right][1].y,
+        );
+        nearest.set(points[left][0], Math.min(nearest.get(points[left][0]), distance));
+        nearest.set(points[right][0], Math.min(nearest.get(points[right][0]), distance));
+      }
+    }
+    return nearest;
+  }
+
+  function gridDotRadius(radius, nearestDistance, scale) {
+    if (!Number.isFinite(nearestDistance)) return radius;
+    return Math.min(radius, Math.max(0.5, (nearestDistance * scale - 1.25) / 2));
   }
 
   function departmentForceLayout(
@@ -1392,6 +1438,8 @@
     departmentForceLayout,
     schoolLayoutRegions,
     departmentGridLayout,
+    nearestPositionDistances,
+    gridDotRadius,
     departmentLabelEligible,
     doiUrl,
     edgeKey,

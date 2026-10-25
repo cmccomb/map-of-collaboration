@@ -985,6 +985,51 @@ test("department grid separates deterministic affiliation clusters", () => {
   assert.ok(Math.abs(centerY) < 1e-9);
 });
 
+test("dense home grid keeps every dot distinct across neighboring academic homes", () => {
+  const source = fixture();
+  source.departments = Array.from({ length: 15 }, (_, index) => ({
+    department_id: `home-${index}`, title: `Home ${index}`,
+  }));
+  source.nodes = source.departments.flatMap((department, groupIndex) =>
+    Array.from({ length: 25 }, (_, personIndex) => ({
+      id: `person-${groupIndex}-${personIndex}`,
+      departments: [department.department_id],
+      primary_department: department.department_id,
+      x: 0, y: 0,
+    })));
+  source.edges = [];
+  const graph = core.parseGraph(source);
+  const filtered = core.filterGraph(graph, {
+    ...core.defaultState(graph), showUnconnected: true, layout: "departments",
+  });
+  const positions = core.departmentGridLayout(filtered, graph);
+  assert.equal(positions.size, 375);
+  assert.deepEqual(positions, core.departmentGridLayout(filtered, graph));
+
+  const nearest = core.nearestPositionDistances(positions);
+  assert.equal(nearest.size, positions.size);
+  for (const distance of nearest.values()) assert.ok(distance >= 0.04);
+  for (const scale of [120, 150, 460]) {
+    const dots = [...positions].map(([id, point]) => ({
+      point,
+      radius: core.gridDotRadius(9, nearest.get(id), scale),
+    }));
+    for (let left = 0; left < dots.length; left += 1) {
+      for (let right = left + 1; right < dots.length; right += 1) {
+        const centerDistance = Math.hypot(
+          dots[left].point.x - dots[right].point.x,
+          dots[left].point.y - dots[right].point.y,
+        ) * scale;
+        assert.ok(centerDistance - dots[left].radius - dots[right].radius >= 1.24,
+          "dots overlap or lose their visual gap");
+      }
+    }
+  }
+  assert.deepEqual(core.nearestPositionDistances(new Map([["solo", { x: 0, y: 0 }]])),
+    new Map([["solo", Infinity]]));
+  assert.equal(core.gridDotRadius(9, Infinity, 120), 9);
+});
+
 test("department layouts fold secondary matches into a selected affiliation", () => {
   const value = fixture();
   value.nodes[2].departments = ["two", "one"];
