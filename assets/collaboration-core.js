@@ -367,7 +367,7 @@
       showUnconnected: false,
       layout: "collaboration",
       departmentSpacing: 3,
-      schoolSpacing: 0,
+      schoolSpacing: graph.schools.length > 1 ? 8 : 0,
       selectedIds: [],
     };
   }
@@ -475,7 +475,7 @@
       layout,
       departmentSpacing: clamp(integer(params.get("spacing"), 3), 1, 10),
       schoolSpacing: graph.schools.length > 1
-        ? clamp(integer(params.get("school_spacing"), 0), 0, 10)
+        ? clamp(integer(params.get("school_spacing"), defaults.schoolSpacing), 0, 10)
         : 0,
       selectedIds,
     }, graph);
@@ -504,8 +504,8 @@
     }
     const departmentSpacing = clamp(integer(state.departmentSpacing, 3), 1, 10);
     if (departmentSpacing !== 3) params.set("spacing", String(departmentSpacing));
-    const schoolSpacing = clamp(integer(state.schoolSpacing, 0), 0, 10);
-    if (schoolSpacing && graph.schools.length > 1) {
+    const schoolSpacing = clamp(integer(state.schoolSpacing, defaults.schoolSpacing), 0, 10);
+    if (schoolSpacing !== defaults.schoolSpacing && graph.schools.length > 1) {
       params.set("school_spacing", String(schoolSpacing));
     }
     const selectedIds = validFacultyIds(state.selectedIds || [], graph);

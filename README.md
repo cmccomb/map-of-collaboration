@@ -44,16 +44,19 @@ node remains available for an observed link to a selected-school faculty member.
 Add people suggestions and person IDs in shared URLs obey the active school and
 unit selections; an out-of-scope person cannot add neighboring nodes.
 
-The home force layout keeps its previous default (home distance
-`3`) and offers levels `1`–`10`. School and college are the same top-level
-grouping in this map. Cross-school/college distance has a separate `0`–`10`
-control, with `0` neutral by default. At larger values, schools have separate
-layout anchors. A cross-appointed faculty member uses one display group in the
-whole-CMU layout. Selecting a school or college places the member in that unit
+The home force layout keeps home distance `3` by default and offers levels
+`1`–`10`. School and college are the same top-level grouping in this map.
+Cross-school/college distance has a separate `0`–`10` control. Its default is
+`8` when multiple schools are present, so their clusters separate without
+adjusting the slider; `0` is available for a neutral layout. A cross-appointed
+faculty member uses one display group in the whole-CMU layout. Selecting a
+school or college places the member in that unit
 when it differs from the primary home. This display choice does not change the
 underlying appointments, filters, or coauthorship links. External coauthors
-have no CMU school or college. The shareable URL stores nondefault values as
-`spacing` and `school_spacing`.
+have no CMU school or college. The shareable URL stores nondefault values,
+including an explicit neutral `school_spacing=0`, as `spacing` and
+`school_spacing`. The college distance control is hidden when one school is
+selected because it cannot move nodes in that view.
 
 ## What this graph does—and does not—show
 

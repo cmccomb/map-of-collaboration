@@ -438,7 +438,8 @@
     elements.schoolSpacingOutput.textContent = schoolSpacingLabel(view.schoolSpacing);
     elements.schoolSpacing.setAttribute("aria-valuetext", schoolSpacingLabel(view.schoolSpacing));
     elements.schoolSpacingControl.hidden =
-      view.layout !== "department-force" || state.graph.schools.length <= 1;
+      view.layout !== "department-force" || state.graph.schools.length <= 1
+      || view.schools.length === 1;
     renderSelectedFaculty();
   }
 
