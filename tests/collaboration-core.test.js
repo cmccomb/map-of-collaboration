@@ -1110,6 +1110,22 @@ test("whole-CMU force view forms Engineering, MCS, and separate SCS departments"
   }
 
   const positions = core.departmentForceLayout(filtered, graph, 1, [], 10);
+  const regions = core.schoolLayoutRegions(filtered, graph, positions, assigned);
+  assert.deepEqual(regions.map((region) => [region.school_id, region.count, region.title]), [
+    ["engineering", 3, "College of Engineering"],
+    ["scs", 3, "School of Computer Science"],
+    ["mcs", 2, "Mellon College of Science"],
+  ]);
+  for (const region of regions) {
+    for (const node of filtered.nodes.filter((candidate) => {
+      const home = graph.academicHomeByGroup.get(assigned.get(candidate.id));
+      return home?.school_id === region.school_id;
+    })) {
+      const point = positions.get(node.id);
+      assert.ok(point.x >= region.minX && point.x <= region.maxX);
+      assert.ok(point.y >= region.minY && point.y <= region.maxY);
+    }
+  }
   const center = (ids) => ({
     x: ids.reduce((sum, id) => sum + positions.get(id).x, 0) / ids.length,
     y: ids.reduce((sum, id) => sum + positions.get(id).y, 0) / ids.length,

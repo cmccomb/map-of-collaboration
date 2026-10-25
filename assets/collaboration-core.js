@@ -1219,6 +1219,33 @@
     });
   }
 
+  function schoolLayoutRegions(filtered, graph, positions, departmentByNode) {
+    const regions = new Map();
+    for (const node of filtered.nodes) {
+      if (node.kind === "external_coauthor") continue;
+      const departmentId = departmentByNode.get(node.id);
+      const schoolId = graph.academicHomeByGroup.get(departmentId)?.school_id
+        || graph.departmentById.get(departmentId)?.school_id;
+      const point = positions.get(node.id);
+      if (!schoolId || !point) continue;
+      if (!regions.has(schoolId)) {
+        regions.set(schoolId, {
+          school_id: schoolId, count: 0,
+          minX: point.x, maxX: point.x, minY: point.y, maxY: point.y,
+        });
+      }
+      const region = regions.get(schoolId);
+      region.count += 1;
+      region.minX = Math.min(region.minX, point.x);
+      region.maxX = Math.max(region.maxX, point.x);
+      region.minY = Math.min(region.minY, point.y);
+      region.maxY = Math.max(region.maxY, point.y);
+    }
+    return graph.schools
+      .filter((school) => regions.has(school.school_id))
+      .map((school) => ({ ...regions.get(school.school_id), title: school.title }));
+  }
+
   function selectionLayout(filtered, nodeIds) {
     const selection = subgraphForSelection(filtered, nodeIds);
     if (selection.selectedIds.length > 1) return collaborationLayout(selection);
@@ -1332,6 +1359,7 @@
     connectionsForNode,
     defaultState,
     departmentForceLayout,
+    schoolLayoutRegions,
     departmentGridLayout,
     departmentLabelEligible,
     doiUrl,

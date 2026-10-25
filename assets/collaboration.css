@@ -14,6 +14,8 @@
   --panel-raised: #132330;
   --canvas: #071019;
   --canvas-grid: #ffffff08;
+  --canvas-school-fill: #73c5df0c;
+  --canvas-school-outline: #73c5df55;
   --canvas-context: #748696;
   --canvas-edge: #7691a344;
   --canvas-edge-strong: #a7c4d788;
@@ -60,6 +62,8 @@
   --panel-raised: #ffffff;
   --canvas: #edf2f4;
   --canvas-grid: #21384512;
+  --canvas-school-fill: #197b990b;
+  --canvas-school-outline: #197b995c;
   --canvas-context: #607887;
   --canvas-edge: #4e6d7d42;
   --canvas-edge-strong: #234b6080;
