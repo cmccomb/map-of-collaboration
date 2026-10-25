@@ -178,7 +178,10 @@ test("school filters keep both CMU endpoints in scope and preserve department li
     "?schools=scs&layout=department-force&spacing=10&school_spacing=7");
   assert.equal(core.stateFromSearch("?school_spacing=99", graph).schoolSpacing, 10);
   assert.equal(core.stateFromSearch("?school_spacing=-5", graph).schoolSpacing, 0);
-  assert.equal(core.stateFromSearch("", graph).schoolSpacing, 0);
+  assert.equal(core.stateFromSearch("", graph).schoolSpacing, 8);
+  assert.equal(core.stateToSearch(core.defaultState(graph), graph), "");
+  assert.equal(core.stateToSearch(core.stateFromSearch("?school_spacing=0", graph), graph),
+    "?school_spacing=0");
   const scs = core.filterGraph(graph, state);
   assert.deepEqual(scs.edges, []);
   assert.deepEqual(scs.nodes, []);
@@ -1073,6 +1076,7 @@ test("whole-CMU force view forms Engineering, MCS, and separate SCS departments"
   );
   const graph = core.parseGraph(value);
   const filtered = core.filterGraph(graph, core.defaultState(graph));
+  assert.equal(core.stateFromSearch("?layout=department-force", graph).schoolSpacing, 8);
   const assigned = core.forceDepartmentAssignments(filtered, graph, 10);
   assert.equal(assigned.get("e"), "mech");
   assert.equal(assigned.get("f"), "s3d");
@@ -1120,6 +1124,26 @@ test("whole-CMU force view forms Engineering, MCS, and separate SCS departments"
   assert.ok(distance(engineering, mcs) > 8);
   assert.ok(distance(scs, mcs) > 8);
   assert.ok(distance(csd, s3d) > 1);
+
+  const defaultPositions = core.departmentForceLayout(
+    filtered, graph, 3, [], core.defaultState(graph).schoolSpacing,
+  );
+  const defaultCenter = (ids) => ({
+    x: ids.reduce((sum, id) => sum + defaultPositions.get(id).x, 0) / ids.length,
+    y: ids.reduce((sum, id) => sum + defaultPositions.get(id).y, 0) / ids.length,
+  });
+  assert.ok(distance(defaultCenter(["a", "b", "e"]), defaultCenter(["c", "d", "f"])) > 5);
+  assert.ok(distance(defaultCenter(["a", "b", "e"]), defaultCenter(["g", "h"])) > 5);
+  assert.ok(distance(defaultCenter(["c", "d", "f"]), defaultCenter(["g", "h"])) > 5);
+  assert.ok(distance(defaultCenter(["c", "d"]), defaultCenter(["f"])) > 1);
+
+  const mcsView = core.stateFromSearch("?schools=mcs&layout=department-force", graph);
+  const mcsGraph = core.filterGraph(graph, mcsView);
+  assert.equal(mcsView.schoolSpacing, 8);
+  assert.deepEqual(
+    core.departmentForceLayout(mcsGraph, graph, 3, [], 8, mcsView.schools),
+    core.departmentForceLayout(mcsGraph, graph, 3, [], 0, mcsView.schools),
+  );
 });
 
 test("collaboration layout removes a simple pair of crossing connections", () => {
