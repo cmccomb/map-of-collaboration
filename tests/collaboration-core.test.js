@@ -104,6 +104,13 @@ function schoolFixture() {
   return value;
 }
 
+test("primary home details identify a reviewed campus", () => {
+  assert.equal(core.academicHomeDisplayText({
+    primary_academic_home_type: "campus",
+    primary_academic_home_basis: "reviewed",
+  }, "CMU Silicon Valley"), "Primary academic home: CMU Silicon Valley (campus; reviewed)");
+});
+
 function schoolGridFixture() {
   const value = schoolFixture();
   value.counts.faculty_count = 5;
