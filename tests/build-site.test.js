@@ -148,6 +148,33 @@ test("deriveGraph creates evidence-backed edges and coverage counts", () => {
   });
 });
 
+test("mapped patents, edited books, and panel transcripts do not create coauthor edges", () => {
+  const artifact = artifactFixture();
+  const original = artifact.points[0];
+  for (const [index, publicationType] of ["patent", "edited_book", "panel_transcript"].entries()) {
+    artifact.points.push({
+      ...original,
+      work_id: `context-${index}`,
+      title: `${publicationType} with named contributors`,
+      publication_type: publicationType,
+      collaboration_eligible: false,
+    });
+  }
+  artifact.point_count = artifact.points.length;
+  const graph = build.deriveGraph(artifact, config, "a".repeat(40));
+  assert.equal(graph.counts.work_count, 5);
+  assert.equal(graph.counts.multiple_faculty_work_count, 1);
+  assert.equal(graph.counts.pair_work_count, 1);
+  assert.equal(graph.edges.length, 1);
+  assert.deepEqual(graph.edges[0].works.map((work) => work.id), ["work-1"]);
+  assert.equal(graph.nodes.find((node) => node.id === "a").mapped_publication_count, 5);
+  assert.equal(graph.nodes.find((node) => node.id === "b").mapped_publication_count, 4);
+
+  artifact.points[2].collaboration_eligible = "false";
+  assert.throws(() => build.deriveGraph(artifact, config, "a".repeat(40)),
+    /invalid collaboration eligibility/);
+});
+
 test("deriveGraph keeps cross-school coauthorship and cross-appointed faculty distinct", () => {
   const artifact = schoolArtifactFixture();
   artifact.catalogs.departments.push({

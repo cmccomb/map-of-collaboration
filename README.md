@@ -17,6 +17,12 @@ in the selected year range. One or more faculty members can be selected to
 compare the union of their visible collaboration neighborhoods and inspect the
 publications behind every displayed connection.
 
+The source artifact can mark a mapped point `collaboration_eligible: false`
+for a reviewed patent, edited book, or panel transcript. Such a work still
+counts in its CMU contributor's mapped output, but its inventors, editors, or
+participants create no coauthor edge. Older artifacts without the field retain
+their existing coauthorship behavior.
+
 The default layout emphasizes the overall collaboration structure. Two
 shareable academic-home views make links between groups easier to trace: an
 organic force layout with tunable cross-home and cross-school/college distance,
