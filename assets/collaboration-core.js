@@ -854,6 +854,56 @@
     return positions;
   }
 
+  function repulsionTree(indices, x, y) {
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const index of indices) {
+      minX = Math.min(minX, x[index]);
+      maxX = Math.max(maxX, x[index]);
+      minY = Math.min(minY, y[index]);
+      maxY = Math.max(maxY, y[index]);
+    }
+    const size = Math.max(0.0002, maxX - minX, maxY - minY) + 0.0001;
+    const left = (minX + maxX - size) / 2;
+    const top = (minY + maxY - size) / 2;
+
+    const build = (members, cellLeft, cellTop, cellSize, depth) => {
+      let sumX = 0;
+      let sumY = 0;
+      for (const index of members) {
+        sumX += x[index];
+        sumY += y[index];
+      }
+      const cell = {
+        x: sumX / members.length,
+        y: sumY / members.length,
+        count: members.length,
+        left: cellLeft,
+        top: cellTop,
+        size: cellSize,
+      };
+      if (members.length <= 4 || depth === 20) {
+        cell.members = members;
+        return cell;
+      }
+      const half = cellSize / 2;
+      const quadrants = [[], [], [], []];
+      for (const index of members) {
+        const column = x[index] >= cellLeft + half ? 1 : 0;
+        const row = y[index] >= cellTop + half ? 1 : 0;
+        quadrants[row * 2 + column].push(index);
+      }
+      cell.children = quadrants.map((group, quadrant) => group.length
+        ? build(group, cellLeft + (quadrant % 2) * half,
+          cellTop + Math.floor(quadrant / 2) * half, half, depth + 1)
+        : null);
+      return cell;
+    };
+    return build(indices, left, top, size, 0);
+  }
+
   function simulateLayout(
     filtered,
     seed,
@@ -873,20 +923,13 @@
     const nodeDepartments = nodes.map(
       (node) => departmentByNode.get(node.id) || node.primary_home_group || node.primary_department,
     );
-    const crossSchoolPairs = schoolOpenness > 0
-      ? new Uint8Array(nodes.length * nodes.length)
-      : null;
-    if (crossSchoolPairs) {
-      const layoutSchools = nodes.map((node) => schoolByNode.get(node.id) || "");
-      for (let left = 0; left < nodes.length; left += 1) {
-        if (!layoutSchools[left]) continue;
-        for (let right = left + 1; right < nodes.length; right += 1) {
-          if (!layoutSchools[right] || layoutSchools[left] === layoutSchools[right]) continue;
-          crossSchoolPairs[left * nodes.length + right] = 1;
-          crossSchoolPairs[right * nodes.length + left] = 1;
-        }
-      }
-    }
+    const layoutSchools = nodes.map((node) => schoolByNode.get(node.id) || "");
+    const schoolIds = new Map();
+    const nodeSchools = layoutSchools.map((school) => {
+      if (!school) return 0;
+      if (!schoolIds.has(school)) schoolIds.set(school, schoolIds.size + 1);
+      return schoolIds.get(school);
+    });
     const x = nodes.map((node) => seed.get(node.id).x);
     const y = nodes.map((node) => seed.get(node.id).y);
     const dx = new Float64Array(nodes.length);
@@ -903,40 +946,115 @@
             departmental && source !== undefined && target !== undefined
               ? nodeDepartments[source] !== nodeDepartments[target]
               : Boolean(edge.cross_department),
-          crossSchool: Boolean(crossSchoolPairs?.[source * nodes.length + target]),
+          crossSchool: schoolOpenness > 0 && nodeSchools[source] !== 0
+            && nodeSchools[target] !== 0 && nodeSchools[source] !== nodeSchools[target],
         };
       })
       .filter((edge) => edge.source !== undefined && edge.target !== undefined);
     const spacing = Math.max(0.12, 2.25 / Math.sqrt(Math.max(1, nodes.length)));
     const baseIterations = nodes.length <= 55 ? 220 : nodes.length <= 140 ? 165 : 115;
     const iterations = baseIterations + (departmental ? 45 : 0);
+    // The full roster can contain far more isolates than connected faculty.
+    // Keep small views exact and aggregate distant people in large views.
+    const approximateRepulsion = nodes.length > 400;
+    const repulsionGroups = approximateRepulsion
+      ? [...nodes.reduce((groups, node, index) => {
+          const department = departmental ? nodeDepartments[index] : "";
+          const school = departmental ? nodeSchools[index] : 0;
+          const key = `${department}\u0000${school}`;
+          if (!groups.has(key)) groups.set(key, { department, school, indices: [] });
+          groups.get(key).indices.push(index);
+          return groups;
+        }, new Map()).values()]
+      : [];
+    const thetaSquared = 0.65 * 0.65;
+    const addTreeForce = (cell, index, factor, ownsGroup) => {
+      const deltaX = x[index] - cell.x;
+      const deltaY = y[index] - cell.y;
+      const distanceSquared = deltaX * deltaX + deltaY * deltaY;
+      const containsSelf = ownsGroup
+        && x[index] >= cell.left && x[index] <= cell.left + cell.size
+        && y[index] >= cell.top && y[index] <= cell.top + cell.size;
+      if (!containsSelf && distanceSquared > 1e-8
+        && cell.size * cell.size < thetaSquared * distanceSquared) {
+        const force = factor * cell.count / distanceSquared;
+        dx[index] += deltaX * force;
+        dy[index] += deltaY * force;
+        return;
+      }
+      if (cell.members) {
+        for (const other of cell.members) {
+          if (other === index) continue;
+          let pairX = x[index] - x[other];
+          let pairY = y[index] - y[other];
+          let pairDistanceSquared = pairX * pairX + pairY * pairY;
+          if (pairDistanceSquared < 1e-8) {
+            const first = Math.min(index, other);
+            const second = Math.max(index, other);
+            const angle = layoutHash(`${nodes[first].id}|${nodes[second].id}`) * Math.PI * 2;
+            const direction = index === first ? 1 : -1;
+            pairX = Math.cos(angle) * 0.0001 * direction;
+            pairY = Math.sin(angle) * 0.0001 * direction;
+            pairDistanceSquared = 1e-8;
+          }
+          const force = factor / pairDistanceSquared;
+          dx[index] += pairX * force;
+          dy[index] += pairY * force;
+        }
+        return;
+      }
+      for (const child of cell.children) {
+        if (child) addTreeForce(child, index, factor, ownsGroup);
+      }
+    };
 
     for (let iteration = 0; iteration < iterations; iteration += 1) {
       dx.fill(0);
       dy.fill(0);
 
-      for (let left = 0; left < nodes.length; left += 1) {
-        for (let right = left + 1; right < nodes.length; right += 1) {
-          let deltaX = x[left] - x[right];
-          let deltaY = y[left] - y[right];
-          let distance = Math.hypot(deltaX, deltaY);
-          if (distance < 0.0001) {
-            const angle = layoutHash(`${nodes[left].id}|${nodes[right].id}`) * Math.PI * 2;
-            deltaX = Math.cos(angle) * 0.0001;
-            deltaY = Math.sin(angle) * 0.0001;
-            distance = 0.0001;
+      if (approximateRepulsion) {
+        const trees = repulsionGroups.map((group) => ({
+          ...group,
+          tree: repulsionTree(group.indices, x, y),
+        }));
+        for (let index = 0; index < nodes.length; index += 1) {
+          for (const group of trees) {
+            const multiplier = 1
+              + (departmental && nodeDepartments[index] !== group.department ? openness * 0.22 : 0)
+              + (schoolOpenness > 0 && nodeSchools[index] !== 0 && group.school !== 0
+                && nodeSchools[index] !== group.school ? schoolOpenness * 0.22 : 0);
+            const ownsGroup = !departmental || (
+              nodeDepartments[index] === group.department
+              && nodeSchools[index] === group.school
+            );
+            addTreeForce(group.tree, index, spacing * spacing * multiplier, ownsGroup);
           }
-          const differentDepartments = nodeDepartments[left] !== nodeDepartments[right];
-          const repulsionMultiplier = 1
-            + (departmental && differentDepartments ? openness * 0.22 : 0)
-            + (crossSchoolPairs?.[left * nodes.length + right] ? schoolOpenness * 0.22 : 0);
-          const force = ((spacing * spacing) / distance) * repulsionMultiplier;
-          const forceX = (deltaX / distance) * force;
-          const forceY = (deltaY / distance) * force;
-          dx[left] += forceX;
-          dy[left] += forceY;
-          dx[right] -= forceX;
-          dy[right] -= forceY;
+        }
+      } else {
+        for (let left = 0; left < nodes.length; left += 1) {
+          for (let right = left + 1; right < nodes.length; right += 1) {
+            let deltaX = x[left] - x[right];
+            let deltaY = y[left] - y[right];
+            let distance = Math.hypot(deltaX, deltaY);
+            if (distance < 0.0001) {
+              const angle = layoutHash(`${nodes[left].id}|${nodes[right].id}`) * Math.PI * 2;
+              deltaX = Math.cos(angle) * 0.0001;
+              deltaY = Math.sin(angle) * 0.0001;
+              distance = 0.0001;
+            }
+            const differentDepartments = nodeDepartments[left] !== nodeDepartments[right];
+            const repulsionMultiplier = 1
+              + (departmental && differentDepartments ? openness * 0.22 : 0)
+              + (schoolOpenness > 0 && nodeSchools[left] !== 0 && nodeSchools[right] !== 0
+                && nodeSchools[left] !== nodeSchools[right] ? schoolOpenness * 0.22 : 0);
+            const force = ((spacing * spacing) / distance) * repulsionMultiplier;
+            const forceX = (deltaX / distance) * force;
+            const forceY = (deltaY / distance) * force;
+            dx[left] += forceX;
+            dy[left] += forceY;
+            dx[right] -= forceX;
+            dy[right] -= forceY;
+          }
         }
       }
 
@@ -1032,7 +1150,9 @@
     const variants =
       filtered.nodes.length <= 90
         ? ["radial-0", "radial-1", "radial-2", "radial-3", "radial-4", "radial-5", "source"]
-        : ["radial-0"];
+        : filtered.nodes.length <= 300
+          ? ["radial-0", "radial-3"]
+          : ["radial-0"];
     const candidates = variants
       .map((variant) => {
         const positions = simulateLayout(filtered, layoutSeed(filtered.nodes, variant));

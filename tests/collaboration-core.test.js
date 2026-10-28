@@ -1340,6 +1340,49 @@ test("collaboration layout removes a simple pair of crossing connections", () =>
   assert.equal(core.edgeCrossingCount(edges, new Map()), 0);
 });
 
+test("large unconnected rosters stay distinct and retain school distance controls", () => {
+  const graph = core.parseGraph(schoolFixture());
+  const nodes = Array.from({ length: 420 }, (_, index) => ({
+    ...graph.nodeById.get(index % 2 ? "c" : "a"),
+    id: `person-${index}`,
+    name: `Person ${index}`,
+    degree: 0,
+    strength: 0,
+  }));
+  const filtered = {
+    nodes,
+    edges: [],
+    nodeById: new Map(nodes.map((node) => [node.id, node])),
+  };
+  const overview = core.collaborationLayout(filtered);
+  assert.deepEqual(core.collaborationLayout(filtered), overview);
+  assert.equal(overview.size, nodes.length);
+  assert([...overview.values()].every((point) =>
+    Number.isFinite(point.x) && Number.isFinite(point.y)));
+  assert(Math.min(...core.nearestPositionDistances(overview).values()) > 0.001);
+
+  const close = core.departmentForceLayout(filtered, graph, 3, [], 0);
+  const far = core.departmentForceLayout(filtered, graph, 3, [], 8);
+  assert.deepEqual(core.departmentForceLayout(filtered, graph, 3, [], 8), far);
+  assert.equal(far.size, nodes.length);
+  assert([...far.values()].every((point) =>
+    Number.isFinite(point.x) && Number.isFinite(point.y)));
+  const schoolDistance = (positions) => {
+    const center = (parity) => {
+      const points = nodes.filter((_, index) => index % 2 === parity)
+        .map((node) => positions.get(node.id));
+      return {
+        x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+        y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+      };
+    };
+    const engineering = center(0);
+    const scs = center(1);
+    return Math.hypot(engineering.x - scs.x, engineering.y - scs.y);
+  };
+  assert(schoolDistance(far) > schoolDistance(close));
+});
+
 test("layout helpers cover empty, singleton, overlapping, and large ego networks", () => {
   assert.deepEqual(core.collaborationLayout({ nodes: [], edges: [] }), new Map());
   assert.deepEqual(
