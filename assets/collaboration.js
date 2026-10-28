@@ -79,6 +79,7 @@
     suggestionNodes: [],
     drag: null,
     layoutPositions: new Map(),
+    overviewBasePositions: new Map(),
     gridNearestDistances: new Map(),
     layoutDepartments: new Map(),
     transition: null,
@@ -690,21 +691,20 @@
   function refitCurrent({ animate = false } = {}) {
     if (state.view?.selectedIds.length) focusSelection({ animate });
     else {
-      const positions =
-        state.view.layout === "department-force"
-          ? core.departmentForceLayout(
-              state.filtered,
-              state.graph,
-              state.view.departmentSpacing,
-              state.view.departments,
-              state.view.schoolSpacing,
-              state.view.schools,
-            )
-          : state.view.layout === "departments"
-            ? core.departmentGridLayout(
-                state.filtered, state.graph, state.view.departments, state.view.schools,
-              )
-            : spreadOverviewLayout(core.collaborationLayout(state.filtered));
+      let positions;
+      if (state.view.layout === "department-force") {
+        positions = core.departmentForceLayout(
+          state.filtered, state.graph, state.view.departmentSpacing,
+          state.view.departments, state.view.schoolSpacing, state.view.schools,
+        );
+      } else if (state.view.layout === "departments") {
+        positions = core.departmentGridLayout(
+          state.filtered, state.graph, state.view.departments, state.view.schools,
+        );
+      } else {
+        state.overviewBasePositions = core.collaborationLayout(state.filtered);
+        positions = spreadOverviewLayout(state.overviewBasePositions);
+      }
       fitNodes(state.filtered?.nodes || [], {
         positions,
         animate,
@@ -756,10 +756,28 @@
     elements.canvas.height = Math.round(state.height * state.dpr);
     context.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
     if (state.filtered) {
-      settleTransition();
-      refitCurrent();
+      if (state.transition) {
+        state.layoutPositions = state.transition.toPositions;
+        state.transition = null;
+      }
+      if (state.layoutPositions.size) {
+        const selection = state.view.selectedIds.length
+          ? core.subgraphForSelection(state.filtered, state.view.selectedIds)
+          : null;
+        const positions = !selection && state.view.layout === "collaboration"
+          && state.overviewBasePositions.size
+          ? spreadOverviewLayout(state.overviewBasePositions)
+          : state.layoutPositions;
+        fitNodes(selection?.nodes || state.filtered.nodes, {
+          positions,
+          maximumScale: selection ? (selection.edges.length ? 560 : 420) : 720,
+        });
+      } else {
+        refitCurrent();
+      }
+    } else {
+      requestRender();
     }
-    else requestRender();
   }
 
   function drawGrid(transform) {

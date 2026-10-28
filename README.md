@@ -36,6 +36,12 @@ appointment may join that selected group's layout cluster while retaining their
 primary home color. People without a supported primary remain neutral and have
 their own unresolved layout group.
 
+For large rosters, the force layouts group distant people in quadtrees during
+repulsion; smaller filtered views retain exact pairwise forces. This keeps the
+**Show unconnected faculty** view responsive without changing which coauthorship
+edges are displayed. For medium overview graphs, the layout compares two
+deterministic starting positions and keeps the one with fewer edge crossings.
+
 A school selection limits CMU faculty and collaborations to the selected schools
 in every layout. Department controls show included unit memberships; the color
 key shows documented primary academic homes. Cross-appointed faculty remain

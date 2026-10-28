@@ -177,11 +177,12 @@ function makeCanvasContext() {
   return context;
 }
 
-async function openMap(search, graphData = graphFixture()) {
+async function openMap(search, graphData = graphFixture(), layoutCalls = null) {
   const elements = new Map();
   const context = makeCanvasContext();
   const errors = [];
   const frames = [];
+  let resizeCallback;
   let copiedUrl = "";
   const url = new URL(`https://example.test/map-of-collaboration/${search}`);
   const elementFor = (selector) => {
@@ -203,7 +204,9 @@ async function openMap(search, graphData = graphFixture()) {
     "collaboration", "department-force", "departments",
   ]);
   const canvas = elementFor("#graph-canvas");
+  let canvasSize = { width: 1100, height: 760 };
   canvas.getContext = () => context;
+  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, ...canvasSize });
   const document = {
     documentElement: { dataset: { resolvedTheme: "dark" } },
     body: new MockElement("body"),
@@ -225,11 +228,24 @@ async function openMap(search, graphData = graphFixture()) {
     innerHeight: 760,
   };
   const sandbox = {
-    CollaborationCore: core,
+    CollaborationCore: layoutCalls ? {
+      ...core,
+      collaborationLayout(...args) {
+        layoutCalls.overview += 1;
+        return layoutCalls.overviewPositions || core.collaborationLayout(...args);
+      },
+      departmentForceLayout(...args) {
+        layoutCalls.force += 1;
+        return core.departmentForceLayout(...args);
+      },
+    } : core,
     document,
     window,
     navigator: { clipboard: { async writeText(value) { copiedUrl = value; } } },
-    ResizeObserver: class { constructor(callback) { this.callback = callback; } observe() { this.callback(); } },
+    ResizeObserver: class {
+      constructor(callback) { resizeCallback = callback; }
+      observe() { resizeCallback(); }
+    },
     requestAnimationFrame(callback) { frames.push(callback); },
     getComputedStyle: () => ({ getPropertyValue: (name) => colors[name] || "#other" }),
     fetch: async (request) => ({
@@ -256,6 +272,10 @@ async function openMap(search, graphData = graphFixture()) {
   }
   return {
     elementFor, layoutOptions, window, paint,
+    resize(width = canvasSize.width, height = canvasSize.height) {
+      canvasSize = { width, height };
+      resizeCallback();
+    },
     get copiedUrl() { return copiedUrl; },
   };
 }
@@ -363,6 +383,41 @@ test("single-school focus hides the college box toggle but keeps home boxes avai
   assert.equal(page.elementFor("#outline-controls").hidden, false);
   assert.equal(page.elementFor("#school-outline-row").hidden, true);
   assert.equal(page.elementFor("#show-home-outlines").checked, true);
+});
+
+test("canvas resize refits the current force layout without rerunning simulation", async () => {
+  const calls = { overview: 0, force: 0 };
+  const page = await openMap("?layout=department-force", graphFixture(), calls);
+  const before = { ...calls };
+  assert(before.force > 0);
+  page.resize();
+  assert.deepEqual(calls, before);
+  assert.equal(rendered(page.paint()).edges, 1);
+});
+
+test("overview resize reapplies viewport stretch without rerunning simulation", async () => {
+  const calls = {
+    overview: 0,
+    force: 0,
+    overviewPositions: new Map([
+      ["a", { x: -0.5, y: -1 }],
+      ["b", { x: 0.5, y: 1 }],
+    ]),
+  };
+  const page = await openMap("", graphFixture(), calls);
+  const nodeSpan = () => {
+    const x = page.paint().filter((call) =>
+      call.method === "arc" && call.args[2] > 2)
+      .map((call) => call.args[0]);
+    assert.equal(x.length, 2);
+    return Math.abs(x[0] - x[1]);
+  };
+  const narrowSpan = nodeSpan();
+  const before = calls.overview;
+  page.resize(1600, 760);
+  const wideSpan = nodeSpan();
+  assert.equal(calls.overview, before);
+  assert(wideSpan > narrowSpan * 1.3);
 });
 
 test("selected faculty shows only that person's publication coverage hold", async () => {
