@@ -9,7 +9,7 @@ const MAX_API_BYTES = 1024 * 1024;
 const MAX_ARTIFACT_BYTES = 64 * 1024 * 1024;
 const REVISION_PATTERN = /^[0-9a-f]{40}$/;
 const GRAPH_SCHEMA_VERSION = 1;
-const EXPECTED_SOURCE_SCHEMA = 7;
+const EXPECTED_SOURCE_SCHEMAS = new Set([7, 8]);
 
 const DEPARTMENT_PRESENTATION = Object.freeze({
   bio: { short_title: "Bio", color_dark: "#8edca4", color_light: "#2c8952" },
@@ -304,8 +304,8 @@ function layoutGraph(nodes, edges, academicHomes) {
 function deriveGraph(artifact, config, revision) {
   assert(artifact && typeof artifact === "object", "Publication artifact must be an object");
   assert(
-    artifact.schema_version === EXPECTED_SOURCE_SCHEMA,
-    `Expected publication schema ${EXPECTED_SOURCE_SCHEMA}, received ${artifact.schema_version}`,
+    EXPECTED_SOURCE_SCHEMAS.has(artifact.schema_version),
+    `Expected publication schema 7 or 8, received ${artifact.schema_version}`,
   );
   assert(Array.isArray(artifact.points), "Publication artifact is missing points");
   assert(Array.isArray(artifact.catalogs?.faculty), "Publication artifact is missing faculty");
@@ -314,6 +314,19 @@ function deriveGraph(artifact, config, revision) {
     artifact.point_count === artifact.points.length,
     "Publication artifact point_count does not match its rows",
   );
+  const hasPendingRows = Object.hasOwn(artifact, "pending_publications");
+  const hasPendingCount = Object.hasOwn(artifact, "pending_publication_count");
+  assert(artifact.schema_version === 8
+    ? hasPendingRows && hasPendingCount
+    : !hasPendingRows && !hasPendingCount,
+  "Publication artifact pending rows require schema 8 and both pending fields");
+  const pendingRows = artifact.schema_version === 8 ? artifact.pending_publications : [];
+  assert(Array.isArray(pendingRows) && pendingRows.length <= 50000,
+    "Publication artifact has invalid pending publications");
+  if (artifact.schema_version === 8) {
+    assert(artifact.pending_publication_count === pendingRows.length,
+      "Publication artifact pending_publication_count does not match its rows");
+  }
 
   const departments = artifact.catalogs.departments.map((department) => {
     const id = String(department.department_id);
@@ -500,6 +513,7 @@ function deriveGraph(artifact, config, revision) {
       publication_hold_reason: typeof person.publication_hold_reason === "string"
         ? person.publication_hold_reason.trim() : "",
       mapped_publication_count: 0,
+      ...(artifact.schema_version === 8 ? { pending_publication_count: 0 } : {}),
       reported_coauthor_work_count: 0,
       collaborator_count: 0,
       collaboration_count: 0,
@@ -542,6 +556,7 @@ function deriveGraph(artifact, config, revision) {
       roles: [],
       publication_count: 0,
       mapped_publication_count: 0,
+      ...(artifact.schema_version === 8 ? { pending_publication_count: 0 } : {}),
       reported_coauthor_work_count: 0,
       collaborator_count: 0,
       collaboration_count: 0,
@@ -554,9 +569,11 @@ function deriveGraph(artifact, config, revision) {
   });
   const nodes = [...facultyNodes, ...externalNodes];
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const facultyById = new Map(artifact.catalogs.faculty.map((person) => [person.person_id, person]));
   const keywordById = new Map(
     (artifact.keywords || []).map((keyword) => [keyword.keyword_id, keyword.label]),
   );
+  const mappedWorkIds = new Set(artifact.points.map((point) => String(point.work_id || "")));
   const workIds = new Set();
   const edgeMap = new Map();
   let missingYearCount = 0;
@@ -565,9 +582,63 @@ function deriveGraph(artifact, config, revision) {
   let duplicateFacultyReferenceCount = 0;
   let duplicateExternalReferenceCount = 0;
   let reportedCoauthorWorkCount = 0;
+  let pendingPairWorkCount = 0;
+  const pendingWorkIds = new Set();
 
-  for (const point of artifact.points) {
+  for (const pending of pendingRows) {
+    assert(pending && typeof pending === "object" && !Array.isArray(pending),
+      "Publication artifact has an invalid pending work");
+    const allowedKeys = [
+      "work_id", "title", "year", "faculty_ids", "source_url", "release_decision",
+      "map_hold_reason", "collaboration_eligible",
+    ];
+    assert(Object.keys(pending).length === allowedKeys.length
+      && Object.keys(pending).every((key) => allowedKeys.includes(key)),
+    "Publication artifact pending work has unexpected fields");
+    assert(typeof pending.work_id === "string" && typeof pending.title === "string"
+      && typeof pending.source_url === "string",
+    "Publication artifact pending work has invalid text fields");
+    const workId = pending.work_id;
+    assert(workId && !pendingWorkIds.has(workId)
+      && !mappedWorkIds.has(workId),
+    `Publication artifact has duplicate pending work ID: ${workId}`);
+    pendingWorkIds.add(workId);
+    assert(String(pending.title || "").trim(), `Pending work ${workId} has no title`);
+    assert(pending.year === null
+      || (Number.isInteger(pending.year) && pending.year >= 1800 && pending.year <= 2200),
+    `Pending work ${workId} has invalid year`);
+    assert(Array.isArray(pending.faculty_ids) && pending.faculty_ids.length > 0
+      && new Set(pending.faculty_ids).size === pending.faculty_ids.length
+      && pending.faculty_ids.every((id) => typeof id === "string" && facultyIds.has(id)),
+    `Pending work ${workId} has invalid faculty IDs`);
+    for (const facultyId of pending.faculty_ids) {
+      const person = facultyById.get(facultyId);
+      assert(person && Object.hasOwn(person, "primary_academic_home_type")
+        && person.primary_academic_home_type !== "unresolved"
+        && String(person.primary_academic_home_id || "").trim()
+        && String(person.primary_academic_home_source_url || "").trim()
+        && String(person.primary_academic_home_verified_at || "").trim()
+        && String(person.primary_academic_home_basis || "").trim(),
+      `Pending work ${workId} has faculty without an evidenced typed home`);
+    }
+    let safePendingUrl = false;
+    try {
+      const url = new URL(pending.source_url);
+      safePendingUrl = url.protocol === "https:" && !url.username && !url.password;
+    } catch {
+      // A pending work must have a reviewed public source link.
+    }
+    assert(safePendingUrl, `Pending work ${workId} has invalid source URL`);
+    assert(pending.release_decision === "selected"
+      && pending.map_hold_reason === "pending_topic_review",
+    `Pending work ${workId} is not selected for topic review`);
+    assert(typeof pending.collaboration_eligible === "boolean",
+      `Pending work ${workId} has invalid collaboration eligibility`);
+  }
+
+  for (const point of [...artifact.points, ...pendingRows]) {
     const workId = String(point.work_id || "");
+    const pending = pendingWorkIds.has(workId);
     assert(workId && !workIds.has(workId), `Duplicate or invalid work ID: ${workId}`);
     workIds.add(workId);
     assert(String(point.title || "").trim(), `Work ${workId} has no title`);
@@ -638,7 +709,7 @@ function deriveGraph(artifact, config, revision) {
         `Work ${workId} has invalid school references`);
     }
     validFaculty.forEach((facultyId) => {
-      nodeById.get(facultyId).mapped_publication_count += 1;
+      nodeById.get(facultyId)[pending ? "pending_publication_count" : "mapped_publication_count"] += 1;
     });
     reportedIds.forEach((facultyId) => {
       nodeById.get(facultyId).reported_coauthor_work_count += 1;
@@ -665,6 +736,7 @@ function deriveGraph(artifact, config, revision) {
       citations: Math.max(0, Number(point.citation_count) || 0),
       doi: String(point.doi || ""),
       url: safeSourceUrl(point),
+      ...(pending ? { map_hold_reason: "pending_topic_review" } : {}),
       ...(Array.isArray(point.source_types)
         && point.source_types.some((type) => type === "curated_verified" || type === "author_site")
         ? { source_types: [...new Set(point.source_types.map(String))] }
@@ -675,7 +747,7 @@ function deriveGraph(artifact, config, revision) {
       ...(Array.isArray(point.source_verification_urls) && point.source_verification_urls.length
         ? { source_verification_urls: [...new Set(point.source_verification_urls.map(String))] }
         : {}),
-      topic: (point.source_types?.includes("curated_verified")
+      topic: pending ? "" : (point.source_types?.includes("curated_verified")
         || point.source_types?.includes("author_site"))
         && !point.source_types.includes("scholar")
         ? ""
@@ -712,6 +784,7 @@ function deriveGraph(artifact, config, revision) {
         edgeMap.get(key).works.push(edgeReported.length
           ? { ...work, reported_faculty_coauthors: edgeReported }
           : work);
+        if (pending) pendingPairWorkCount += 1;
       }
     }
   }
@@ -753,7 +826,7 @@ function deriveGraph(artifact, config, revision) {
     academicHomes,
   );
 
-  const datedYears = artifact.points
+  const datedYears = [...artifact.points, ...pendingRows]
     .map((point) => point.year)
     .filter(Number.isInteger);
   const mappedFacultyCount = facultyNodes.filter((node) => node.mapped_publication_count > 0).length;
@@ -762,6 +835,8 @@ function deriveGraph(artifact, config, revision) {
     node.mapped_publication_count > 0 && node.collaborator_count === 0).length;
   const reportedOnlyFacultyCount = facultyNodes.filter((node) =>
     node.mapped_publication_count === 0 && node.reported_coauthor_work_count > 0).length;
+  const pendingOnlyFacultyCount = facultyNodes.filter((node) =>
+    node.mapped_publication_count === 0 && node.pending_publication_count > 0).length;
   const pairWorkCount = edges.reduce((sum, edge) => sum + edge.works.length, 0);
 
   return {
@@ -789,6 +864,11 @@ function deriveGraph(artifact, config, revision) {
     },
     counts: {
       work_count: artifact.points.length,
+      ...(artifact.schema_version === 8 ? {
+        pending_work_count: pendingRows.length,
+        pending_pair_work_count: pendingPairWorkCount,
+        pending_only_faculty_count: pendingOnlyFacultyCount,
+      } : {}),
       faculty_count: facultyNodes.length,
       mapped_faculty_count: mappedFacultyCount,
       connected_faculty_count: connectedFacultyCount,

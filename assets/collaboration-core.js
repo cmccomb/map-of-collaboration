@@ -288,6 +288,9 @@
         publication_hold_reason: kind === "faculty" && typeof node.publication_hold_reason === "string"
           ? node.publication_hold_reason.trim() : "",
         mapped_publication_count: Math.max(0, integer(node.mapped_publication_count)),
+        ...(Object.hasOwn(node, "pending_publication_count")
+          ? { pending_publication_count: Math.max(0, integer(node.pending_publication_count)) }
+          : {}),
         reported_coauthor_work_count: Math.max(0, integer(node.reported_coauthor_work_count)),
         collaborator_count: Math.max(0, integer(node.collaborator_count)),
         collaboration_count: Math.max(0, integer(node.collaboration_count)),
@@ -342,6 +345,20 @@
         });
         assert(new Set(reported.map((entry) => entry.person_id)).size === reported.length,
           `Edge ${key} repeats reported coauthor evidence`);
+        assert(work.map_hold_reason === undefined
+          || work.map_hold_reason === "pending_topic_review",
+        `Edge ${key} has invalid pending topic status`);
+        if (work.map_hold_reason === "pending_topic_review") {
+          let pendingUrl;
+          try {
+            pendingUrl = new URL(work.url);
+          } catch {
+            // A selected pending work must retain its public HTTPS source.
+          }
+          assert(!work.topic && pendingUrl?.protocol === "https:"
+            && !pendingUrl.username && !pendingUrl.password,
+            `Edge ${key} has invalid pending work presentation`);
+        }
         return {
           id,
           title: String(work.title || "Untitled work"),
@@ -356,6 +373,8 @@
             .filter(Boolean),
           reported_faculty_coauthors: reported,
           topic: String(work.topic || ""),
+          ...(work.map_hold_reason === "pending_topic_review"
+            ? { map_hold_reason: "pending_topic_review" } : {}),
         };
       });
       return {

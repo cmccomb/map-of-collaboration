@@ -100,6 +100,41 @@ test("publication hold stays with its faculty member in parsed graph", () => {
   assert.equal(graph.edges.length, 2);
 });
 
+test("parsed graph preserves pending coauthorship without assigning a topic", () => {
+  const value = fixture();
+  value.nodes[0].pending_publication_count = 1;
+  value.nodes[1].pending_publication_count = 1;
+  value.edges[0].works.push({
+    id: "pending-work",
+    title: "Selected paper awaiting topic review",
+    year: 2025,
+    url: "https://publisher.example.edu/pending-work",
+    topic: "",
+    map_hold_reason: "pending_topic_review",
+  });
+  const graph = core.parseGraph(value);
+  assert.equal(graph.nodeById.get("a").pending_publication_count, 1);
+  assert.equal(graph.nodeById.get("b").pending_publication_count, 1);
+  const work = graph.edges.find((edge) => edge.source === "a" && edge.target === "b")
+    .works.find((entry) => entry.id === "pending-work");
+  assert.equal(work.map_hold_reason, "pending_topic_review");
+  assert.equal(work.topic, "");
+  assert.equal(work.url, "https://publisher.example.edu/pending-work");
+
+  const wrongStatus = structuredClone(value);
+  wrongStatus.edges[0].works[2].map_hold_reason = "held_source";
+  assert.throws(() => core.parseGraph(wrongStatus), /invalid pending topic status/);
+  const wrongTopic = structuredClone(value);
+  wrongTopic.edges[0].works[2].topic = "Invented topic";
+  assert.throws(() => core.parseGraph(wrongTopic), /invalid pending work presentation/);
+  const unsafeUrl = structuredClone(value);
+  unsafeUrl.edges[0].works[2].url = "http://publisher.example.edu/pending-work";
+  assert.throws(() => core.parseGraph(unsafeUrl), /invalid pending work presentation/);
+  const credentialedUrl = structuredClone(value);
+  credentialedUrl.edges[0].works[2].url = "https://user:password@publisher.example.edu/pending-work";
+  assert.throws(() => core.parseGraph(credentialedUrl), /invalid pending work presentation/);
+});
+
 test("publication provenance distinguishes Scholar and researcher bibliography evidence", () => {
   assert.deepEqual(core.publicationProvenance([]), {
     citationCountUnavailable: false,
