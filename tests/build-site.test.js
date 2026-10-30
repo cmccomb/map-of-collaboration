@@ -111,6 +111,35 @@ function schoolArtifactFixture() {
   return artifact;
 }
 
+function pendingArtifactFixture() {
+  const artifact = schoolArtifactFixture();
+  artifact.schema_version = 8;
+  artifact.catalogs.faculty.forEach((person) => {
+    const department = artifact.catalogs.departments.find(
+      (item) => item.department_id === person.memberships[0].department_id,
+    );
+    person.primary_academic_home_type = "department";
+    person.primary_academic_home_id = department.department_id;
+    person.primary_academic_home_title = department.title;
+    person.primary_academic_home_school_id = "engineering";
+    person.primary_academic_home_basis = "reviewed";
+    person.primary_academic_home_source_url = "https://cmu.example.edu/faculty";
+    person.primary_academic_home_verified_at = "2026-10-30";
+  });
+  artifact.pending_publication_count = 1;
+  artifact.pending_publications = [{
+    work_id: "work-pending",
+    title: "Reviewed selected coauthored work",
+    year: 2025,
+    faculty_ids: ["a", "c"],
+    source_url: "https://publisher.example.edu/work-pending",
+    release_decision: "selected",
+    map_hold_reason: "pending_topic_review",
+    collaboration_eligible: true,
+  }];
+  return artifact;
+}
+
 const config = {
   title: "Fixture graph",
   heading: "Fixture",
@@ -146,6 +175,66 @@ test("deriveGraph creates evidence-backed edges and coverage counts", () => {
     assert.equal(Number.isFinite(node.x), true);
     assert.equal(Number.isFinite(node.y), true);
   });
+});
+
+test("schema 8 includes selected pending coauthorship without calling it mapped", () => {
+  const artifact = pendingArtifactFixture();
+  const graph = build.deriveGraph(artifact, config, "a".repeat(40));
+  const oldEdge = graph.edges.find((edge) => edge.source === "a" && edge.target === "b");
+  const pendingEdge = graph.edges.find((edge) => edge.source === "a" && edge.target === "c");
+  assert.deepEqual(oldEdge.works.map((work) => work.id), ["work-1"]);
+  assert.equal(pendingEdge.works.length, 1);
+  assert.equal(pendingEdge.works[0].id, "work-pending");
+  assert.equal(pendingEdge.works[0].topic, "");
+  assert.equal(pendingEdge.works[0].map_hold_reason, "pending_topic_review");
+  assert.equal(pendingEdge.works[0].url, "https://publisher.example.edu/work-pending");
+  assert.equal(graph.nodes.find((node) => node.id === "c").mapped_publication_count, 0);
+  assert.equal(graph.nodes.find((node) => node.id === "c").pending_publication_count, 1);
+  assert.equal(graph.counts.work_count, 2);
+  assert.equal(graph.counts.pending_work_count, 1);
+  assert.equal(graph.counts.pending_pair_work_count, 1);
+  assert.equal(graph.counts.pending_only_faculty_count, 1);
+  assert.equal(graph.counts.pair_work_count, 2);
+  assert.equal(graph.counts.mapped_without_collaboration_count, 0);
+  assert.equal(graph.source.artifact_schema_version, 8);
+});
+
+test("schema 8 keeps ineligible pending works as coverage without making a collaboration edge", () => {
+  const artifact = pendingArtifactFixture();
+  artifact.pending_publications[0].collaboration_eligible = false;
+  const graph = build.deriveGraph(artifact, config, "a".repeat(40));
+  assert.deepEqual(graph.edges.map((edge) => [edge.source, edge.target]), [["a", "b"]]);
+  assert.deepEqual(graph.edges[0].works.map((work) => work.id), ["work-1"]);
+  assert.equal(graph.nodes.find((node) => node.id === "c").pending_publication_count, 1);
+  assert.equal(graph.counts.pending_work_count, 1);
+  assert.equal(graph.counts.pending_pair_work_count, 0);
+});
+
+test("pending graph rows fail closed on schema, selection, ownership, and source errors", () => {
+  const cases = [
+    [(artifact) => { artifact.schema_version = 7; }, /pending rows require schema 8/],
+    [(artifact) => { delete artifact.pending_publication_count; }, /both pending fields/],
+    [(artifact) => { artifact.pending_publication_count = 2; }, /pending_publication_count/],
+    [(artifact) => { artifact.pending_publications[0].work_id = "work-1"; }, /duplicate pending work ID/],
+    [(artifact) => { artifact.pending_publications[0].faculty_ids = ["a", "a"]; }, /invalid faculty IDs/],
+    [(artifact) => { artifact.pending_publications[0].faculty_ids = ["missing"]; }, /invalid faculty IDs/],
+    [(artifact) => { artifact.pending_publications[0].release_decision = "held"; }, /not selected/],
+    [(artifact) => { artifact.pending_publications[0].map_hold_reason = "other"; }, /not selected/],
+    [(artifact) => { delete artifact.pending_publications[0].collaboration_eligible; }, /unexpected fields/],
+    [(artifact) => { artifact.pending_publications[0].collaboration_eligible = "true"; }, /invalid collaboration eligibility/],
+    [(artifact) => { artifact.pending_publications[0].source_url = "http://example.com"; }, /invalid source URL/],
+    [(artifact) => { artifact.pending_publications[0].source_url = "https://user:password@example.com"; }, /invalid source URL/],
+    [(artifact) => { artifact.pending_publications[0].year = "2025"; }, /invalid year/],
+    [(artifact) => { artifact.pending_publications[0].title = ""; }, /no title/],
+    [(artifact) => { artifact.pending_publications[0].doi = "10.1234/extra"; }, /unexpected fields/],
+    [(artifact) => { artifact.catalogs.faculty[0].primary_academic_home_source_url = ""; }, /evidenced typed home/],
+    [(artifact) => { artifact.catalogs.faculty[0].primary_academic_home_type = "unresolved"; }, /incomplete primary academic home|evidenced typed home/],
+  ];
+  for (const [mutate, pattern] of cases) {
+    const artifact = pendingArtifactFixture();
+    mutate(artifact);
+    assert.throws(() => build.deriveGraph(artifact, config, "a".repeat(40)), pattern);
+  }
 });
 
 test("reviewed one-sided coauthor evidence adds an edge without changing own-source publication coverage", () => {
@@ -873,6 +962,26 @@ test("buildSite stages a complete pinned site with mocked upstream data", async 
   );
   await fs.access(path.join(outputDirectory, "assets", "collaboration-core.js"));
   await fs.access(path.join(outputDirectory, ".nojekyll"));
+});
+
+test("buildSite stages and parses schema 8 pending graph evidence", async (t) => {
+  const outputDirectory = await fs.mkdtemp(path.join(projectRoot, ".test-site-"));
+  t.after(async () => fs.rm(outputDirectory, { recursive: true, force: true }));
+  const revision = "e".repeat(40);
+  const result = await build.buildSite({
+    sourceDirectory: projectRoot,
+    outputDirectory,
+    fetchImpl: async (url) => response(url.includes("/api/datasets/")
+      ? { sha: revision } : pendingArtifactFixture()),
+  });
+  assert.equal(result.graph.source.artifact_schema_version, 8);
+  assert.equal(result.graph.counts.pending_work_count, 1);
+  const parsed = core.parseGraph(JSON.parse(await fs.readFile(
+    path.join(outputDirectory, "data", result.artifactName), "utf8",
+  )));
+  assert.equal(parsed.edges.length, 2);
+  assert.equal(parsed.edges.find((edge) => edge.source === "a" && edge.target === "c")
+    .works[0].map_hold_reason, "pending_topic_review");
 });
 
 test("build entry points reject unsafe destinations and support revision-only checks", async () => {

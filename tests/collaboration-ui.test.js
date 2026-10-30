@@ -381,6 +381,43 @@ test("selected faculty shows only that person's publication coverage hold", asyn
   assert.equal(other.elementFor("#detail-content").querySelectorAll(".detail-coverage").length, 0);
 });
 
+test("selected pending coauthorship is visible without implying research-map placement", async () => {
+  const value = graphFixture();
+  value.counts.pending_work_count = 1;
+  value.counts.pending_pair_work_count = 1;
+  value.years.maximum = 2025;
+  value.nodes[0].pending_publication_count = 1;
+  value.nodes[1].pending_publication_count = 1;
+  value.nodes[1].mapped_publication_count = 0;
+  value.edges[0].works.push({
+    id: "pending-work", title: "Reviewed selected coauthored work", year: 2025,
+    url: "https://publisher.example.edu/pending-work", topic: "",
+    map_hold_reason: "pending_topic_review",
+  });
+  const page = await openMap("?faculty=b", value);
+  assert.match(page.elementFor("#coverage-note").textContent,
+    /1 selected work awaits topic review and is not positioned on the research map/);
+  const details = page.elementFor("#detail-content");
+  assert(details.querySelectorAll(".detail-coverage").some((note) =>
+    note.children.some((child) => child.textContent.includes("not positioned on the research map"))));
+  assert(details.querySelectorAll(".detail-metric").some((metric) =>
+    metric.children[0].textContent === "0" && metric.children[1].textContent === "mapped works"));
+  assert(details.querySelectorAll(".detail-metric").some((metric) =>
+    metric.children[0].textContent === "1"
+    && metric.children[1].textContent === "selected works awaiting topic review"));
+  const button = details.querySelector(".collaborator-button");
+  details.dispatch("click", { target: button });
+  assert(details.querySelectorAll(".publication-meta").some((item) =>
+    item.textContent.includes("Topic review pending; not positioned on research map")));
+
+  const searchPage = await openMap("", value);
+  const search = searchPage.elementFor("#faculty-search");
+  search.value = "Bela";
+  search.dispatch("input");
+  const suggestion = searchPage.elementFor("#faculty-suggestions").querySelector("button");
+  assert.match(suggestion.children[1].textContent, /1 selected work awaiting topic review/);
+});
+
 test("expanded connection identifies coauthor-report evidence and keeps own mapped count separate", async () => {
   const value = graphFixture();
   value.counts.mapped_faculty_count = 1;

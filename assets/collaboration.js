@@ -263,6 +263,8 @@
         "cataloged faculty member",
       )} do not.${counts.reported_coauthor_only_faculty_count
         ? ` ${plural(counts.reported_coauthor_only_faculty_count, "faculty member")} ${counts.reported_coauthor_only_faculty_count === 1 ? "appears" : "appear"} only through source-verified coauthor reports.`
+        : ""}${counts.pending_work_count
+        ? ` ${plural(counts.pending_work_count, "selected work")} ${counts.pending_work_count === 1 ? "awaits" : "await"} topic review and ${counts.pending_work_count === 1 ? "is" : "are"} not positioned on the research map; eligible coauthorship may appear here.`
         : ""} ${state.graph.quality.coverage_note || ""}`;
       setLoading(false);
       if (state.view.selectedIds.length) focusSelection();
@@ -1265,6 +1267,13 @@
   }
 
   function appendPublicationCoverage(nodes) {
+    if (nodes.some((node) => node.pending_publication_count > 0)) {
+      const note = element("div", "detail-coverage");
+      note.setAttribute("role", "note");
+      note.append(element("p", "",
+        "Selected works awaiting topic review may support collaboration links, but are not positioned on the research map."));
+      elements.detailContent.append(note);
+    }
     const held = nodes.filter((node) => node.kind === "faculty" && node.publication_hold_reason);
     for (const node of held) {
       const note = element("div", "detail-coverage");
@@ -1358,6 +1367,9 @@
       [filteredNode.degree, "visible collaborators"],
       [filteredNode.strength, "pair–work records"],
       [node.mapped_publication_count, "mapped works"],
+      ...(node.pending_publication_count
+        ? [[node.pending_publication_count, "selected works awaiting topic review"]]
+        : []),
       ...(node.reported_coauthor_work_count
         ? [[node.reported_coauthor_work_count, "works reported by coauthors"]]
         : []),
@@ -1378,7 +1390,7 @@
           "detail-no-links",
           hiddenExternalConnection
             ? "A verified historical coauthor connection is hidden. Turn on Show Erdős to inspect the shared works."
-            : node.mapped_publication_count
+            : node.mapped_publication_count || node.pending_publication_count
             ? "No connections meet the current year, department, and strength filters."
             : node.kind === "external_coauthor"
               ? "No verified shared works are available for this external coauthor in the source artifact."
@@ -1496,6 +1508,8 @@
       }
       const details = [
         Number.isInteger(work.year) ? work.year : "Undated",
+        work.map_hold_reason === "pending_topic_review"
+          ? "Topic review pending; not positioned on research map" : "",
         work.topic,
         !provenance.citationCountUnavailable && work.citations
           ? plural(work.citations, "citation") : "",
@@ -1593,6 +1607,8 @@
             "",
             node.mapped_publication_count
               ? `${department} · ${plural(node.mapped_publication_count, "mapped work")}`
+              : node.pending_publication_count
+                ? `${department} · ${plural(node.pending_publication_count, "selected work")} awaiting topic review`
               : node.reported_coauthor_work_count
                 ? `${department} · ${plural(node.reported_coauthor_work_count, "work reported by coauthors")}`
                 : `${department} · no mapped works`,
