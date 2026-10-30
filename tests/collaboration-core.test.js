@@ -510,6 +510,32 @@ test("parseGraph validates school joins", () => {
   }
 });
 
+test("parseGraph preserves and validates one-sided coauthor provenance", () => {
+  const evidence = {
+    person_id: "b",
+    source_person_id: "a",
+    source_observation_id: "observation-a-w1",
+    source_url: "https://publisher.example/w1",
+    verified_at: "2026-10-30",
+  };
+  const valid = fixture();
+  valid.edges[0].works[0].reported_faculty_coauthors = [{ ...evidence }];
+  assert.deepEqual(core.parseGraph(valid).edges[0].works[0].reported_faculty_coauthors,
+    [{ ...evidence }]);
+  for (const mutate of [
+    (entry) => { entry.person_id = "c"; },
+    (entry) => { entry.source_person_id = "b"; },
+    (entry) => { entry.source_url = "javascript:alert(1)"; },
+    (entry) => { entry.source_observation_id = ""; },
+    (entry) => { entry.verified_at = ""; },
+  ]) {
+    const value = fixture();
+    value.edges[0].works[0].reported_faculty_coauthors = [{ ...evidence }];
+    mutate(value.edges[0].works[0].reported_faculty_coauthors[0]);
+    assert.throws(() => core.parseGraph(value), /reported coauthor evidence/);
+  }
+});
+
 test("parseGraph rejects malformed graph relationships", () => {
   const cases = [
     [() => null, /must be an object/],

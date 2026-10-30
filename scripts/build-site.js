@@ -500,6 +500,7 @@ function deriveGraph(artifact, config, revision) {
       publication_hold_reason: typeof person.publication_hold_reason === "string"
         ? person.publication_hold_reason.trim() : "",
       mapped_publication_count: 0,
+      reported_coauthor_work_count: 0,
       collaborator_count: 0,
       collaboration_count: 0,
       homepage_url: String(person.homepage_url || ""),
@@ -541,6 +542,7 @@ function deriveGraph(artifact, config, revision) {
       roles: [],
       publication_count: 0,
       mapped_publication_count: 0,
+      reported_coauthor_work_count: 0,
       collaborator_count: 0,
       collaboration_count: 0,
       homepage_url: sourceUrl,
@@ -562,6 +564,7 @@ function deriveGraph(artifact, config, revision) {
   let invalidFacultyReferenceCount = 0;
   let duplicateFacultyReferenceCount = 0;
   let duplicateExternalReferenceCount = 0;
+  let reportedCoauthorWorkCount = 0;
 
   for (const point of artifact.points) {
     const workId = String(point.work_id || "");
@@ -581,6 +584,41 @@ function deriveGraph(artifact, config, revision) {
       return false;
     });
     assert(validFaculty.length > 0, `Work ${workId} has no valid faculty relationship`);
+    const originalReported = point.reported_faculty_coauthors === undefined
+      ? [] : point.reported_faculty_coauthors;
+    assert(Array.isArray(originalReported), `Work ${workId} has invalid reported faculty coauthors`);
+    const reportedFaculty = originalReported.map((entry) => {
+      assert(entry && typeof entry === "object" && !Array.isArray(entry),
+        `Work ${workId} has invalid reported faculty coauthor evidence`);
+      const personId = String(entry.person_id || "");
+      const sourcePersonId = String(entry.source_person_id || "");
+      const sourceObservationId = String(entry.source_observation_id || "");
+      const sourceUrl = String(entry.source_url || "");
+      const verifiedAt = String(entry.verified_at || "");
+      let isHttps = false;
+      try {
+        isHttps = new URL(sourceUrl).protocol === "https:";
+      } catch {
+        // A publisher or institutional byline source must have a usable URL.
+      }
+      assert(facultyIds.has(personId) && !validFaculty.includes(personId)
+        && validFaculty.includes(sourcePersonId) && personId !== sourcePersonId
+        && sourceObservationId && isHttps && /^\d{4}-\d{2}-\d{2}$/.test(verifiedAt),
+      `Work ${workId} has invalid reported faculty coauthor evidence`);
+      return {
+        person_id: personId,
+        source_person_id: sourcePersonId,
+        source_observation_id: sourceObservationId,
+        source_url: sourceUrl,
+        verified_at: verifiedAt,
+      };
+    });
+    const reportedIds = reportedFaculty.map((entry) => entry.person_id);
+    assert(new Set(reportedIds).size === reportedIds.length,
+      `Work ${workId} repeats a reported faculty coauthor`);
+    assert(!reportedFaculty.length || (point.collaboration_eligible === true
+      && Array.isArray(point.source_types) && point.source_types.includes("scholar")),
+    `Work ${workId} has reported faculty coauthors without an eligible Scholar source`);
     const originalExternal = Array.isArray(point.external_coauthor_ids)
       ? point.external_coauthor_ids.map(String)
       : [];
@@ -602,6 +640,10 @@ function deriveGraph(artifact, config, revision) {
     validFaculty.forEach((facultyId) => {
       nodeById.get(facultyId).mapped_publication_count += 1;
     });
+    reportedIds.forEach((facultyId) => {
+      nodeById.get(facultyId).reported_coauthor_work_count += 1;
+    });
+    if (reportedIds.length) reportedCoauthorWorkCount += 1;
     if (collaborationEligible) {
       pointExternal.forEach((id) => {
         nodeById.get(id).mapped_publication_count += 1;
@@ -610,7 +652,8 @@ function deriveGraph(artifact, config, revision) {
     const year = Number.isInteger(point.year) ? point.year : null;
     if (year === null) missingYearCount += 1;
     if (!collaborationEligible) continue;
-    if (validFaculty.length > 1) multipleFacultyWorkCount += 1;
+    const graphFaculty = [...validFaculty, ...reportedIds];
+    if (graphFaculty.length > 1) multipleFacultyWorkCount += 1;
     const detailedTopicId = Array.isArray(point.keyword_ids)
       ? point.keyword_ids.at(-1)
       : "";
@@ -638,7 +681,7 @@ function deriveGraph(artifact, config, revision) {
         ? ""
         : String(keywordById.get(detailedTopicId) || ""),
     };
-    const includedAuthors = [...validFaculty, ...pointExternal].sort();
+    const includedAuthors = [...graphFaculty, ...pointExternal].sort();
     for (let left = 0; left < includedAuthors.length; left += 1) {
       for (let right = left + 1; right < includedAuthors.length; right += 1) {
         const source = includedAuthors[left];
@@ -664,7 +707,11 @@ function deriveGraph(artifact, config, revision) {
             works: [],
           });
         }
-        edgeMap.get(key).works.push(work);
+        const edgeReported = reportedFaculty.filter((entry) =>
+          entry.person_id === source || entry.person_id === target);
+        edgeMap.get(key).works.push(edgeReported.length
+          ? { ...work, reported_faculty_coauthors: edgeReported }
+          : work);
       }
     }
   }
@@ -711,6 +758,10 @@ function deriveGraph(artifact, config, revision) {
     .filter(Number.isInteger);
   const mappedFacultyCount = facultyNodes.filter((node) => node.mapped_publication_count > 0).length;
   const connectedFacultyCount = facultyNodes.filter((node) => node.collaborator_count > 0).length;
+  const mappedWithoutCollaborationCount = facultyNodes.filter((node) =>
+    node.mapped_publication_count > 0 && node.collaborator_count === 0).length;
+  const reportedOnlyFacultyCount = facultyNodes.filter((node) =>
+    node.mapped_publication_count === 0 && node.reported_coauthor_work_count > 0).length;
   const pairWorkCount = edges.reduce((sum, edge) => sum + edge.works.length, 0);
 
   return {
@@ -741,8 +792,12 @@ function deriveGraph(artifact, config, revision) {
       faculty_count: facultyNodes.length,
       mapped_faculty_count: mappedFacultyCount,
       connected_faculty_count: connectedFacultyCount,
-      mapped_without_collaboration_count: mappedFacultyCount - connectedFacultyCount,
+      mapped_without_collaboration_count: mappedWithoutCollaborationCount,
       unmapped_faculty_count: facultyNodes.length - mappedFacultyCount,
+      ...(reportedCoauthorWorkCount ? {
+        reported_coauthor_work_count: reportedCoauthorWorkCount,
+        reported_coauthor_only_faculty_count: reportedOnlyFacultyCount,
+      } : {}),
       ...(externalNodes.length ? { external_coauthor_count: externalNodes.length } : {}),
       edge_count: edges.length,
       multiple_faculty_work_count: multipleFacultyWorkCount,

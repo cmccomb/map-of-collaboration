@@ -148,6 +148,73 @@ test("deriveGraph creates evidence-backed edges and coverage counts", () => {
   });
 });
 
+test("reviewed one-sided coauthor evidence adds an edge without changing own-source publication coverage", () => {
+  const artifact = artifactFixture();
+  artifact.points[1].source_types = ["scholar"];
+  artifact.points[1].collaboration_eligible = true;
+  artifact.points[1].reported_faculty_coauthors = [{
+    person_id: "c",
+    source_person_id: "a",
+    source_observation_id: "observation-a-work-2",
+    source_url: "https://publisher.example/work-2",
+    verified_at: "2026-10-30",
+  }];
+  const graph = build.deriveGraph(artifact, config, "a".repeat(40));
+  const reported = graph.edges.find((edge) =>
+    [edge.source, edge.target].includes("c"));
+  assert.ok(reported);
+  assert.equal(reported.works[0].id, "work-2");
+  assert.deepEqual(reported.works[0].reported_faculty_coauthors,
+    artifact.points[1].reported_faculty_coauthors);
+  const target = graph.nodes.find((node) => node.id === "c");
+  assert.equal(target.publication_count, 0);
+  assert.equal(target.mapped_publication_count, 0);
+  assert.equal(target.reported_coauthor_work_count, 1);
+  assert.equal(graph.counts.mapped_faculty_count, 2);
+  assert.equal(graph.counts.connected_faculty_count, 3);
+  assert.equal(graph.counts.mapped_without_collaboration_count, 0);
+  assert.equal(graph.counts.reported_coauthor_only_faculty_count, 1);
+  assert.equal(graph.counts.reported_coauthor_work_count, 1);
+  const parsed = core.parseGraph(graph);
+  const csv = core.edgesToCsv(parsed, core.filterGraph(parsed, core.defaultState(parsed)));
+  assert.match(csv, /reported_coauthor_works,reported_coauthor_evidence/);
+  assert.match(csv, /Cora Gamma reported by Ada Alpha/);
+  assert.match(csv, /observation-a-work-2/);
+  assert.match(csv, /https:\/\/publisher\.example\/work-2/);
+});
+
+test("reported faculty coauthors fail closed on redundant, duplicated, or malformed provenance", () => {
+  const evidence = {
+    person_id: "c",
+    source_person_id: "a",
+    source_observation_id: "observation-a-work-2",
+    source_url: "https://publisher.example/work-2",
+    verified_at: "2026-10-30",
+  };
+  const candidate = () => {
+    const artifact = artifactFixture();
+    artifact.points[1].source_types = ["scholar"];
+    artifact.points[1].collaboration_eligible = true;
+    artifact.points[1].reported_faculty_coauthors = [{ ...evidence }];
+    return artifact;
+  };
+  for (const mutate of [
+    (point) => { point.reported_faculty_coauthors.push({ ...evidence }); },
+    (point) => { point.reported_faculty_coauthors[0].person_id = "a"; },
+    (point) => { point.reported_faculty_coauthors[0].source_person_id = "b"; },
+    (point) => { point.reported_faculty_coauthors[0].source_observation_id = ""; },
+    (point) => { point.reported_faculty_coauthors[0].source_url = "http://publisher.example/work-2"; },
+    (point) => { point.reported_faculty_coauthors[0].verified_at = ""; },
+    (point) => { point.collaboration_eligible = false; },
+    (point) => { point.source_types = ["curated_verified"]; },
+  ]) {
+    const artifact = candidate();
+    mutate(artifact.points[1]);
+    assert.throws(() => build.deriveGraph(artifact, config, "a".repeat(40)),
+      /reported faculty coauthor/);
+  }
+});
+
 test("deriveGraph carries a person-scoped publication hold without hiding other researchers' works", () => {
   const artifact = artifactFixture();
   artifact.catalogs.faculty[2].publication_hold_reason = "Publication history pending full capture";

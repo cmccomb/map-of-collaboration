@@ -129,6 +129,9 @@ class MockElement {
     if (selector === "input") return this.tagName === "input";
     if (selector === "input:checked") return this.tagName === "input" && this.checked;
     if (selector === "button") return this.tagName === "button";
+    if (selector === "button[data-edge-id]") {
+      return this.tagName === "button" && Boolean(this.dataset.edgeId);
+    }
     if (selector === "button[data-department-id]") {
       return this.tagName === "button" && Boolean(this.dataset.departmentId);
     }
@@ -376,4 +379,45 @@ test("selected faculty shows only that person's publication coverage hold", asyn
     "Publication history pending full capture");
   const other = await openMap("?faculty=b", value);
   assert.equal(other.elementFor("#detail-content").querySelectorAll(".detail-coverage").length, 0);
+});
+
+test("expanded connection identifies coauthor-report evidence and keeps own mapped count separate", async () => {
+  const value = graphFixture();
+  value.counts.mapped_faculty_count = 1;
+  value.counts.unmapped_faculty_count = 1;
+  value.counts.reported_coauthor_only_faculty_count = 1;
+  value.nodes[1].mapped_publication_count = 0;
+  value.nodes[1].reported_coauthor_work_count = 1;
+  value.edges[0].works[0].reported_faculty_coauthors = [{
+    person_id: "b",
+    source_person_id: "a",
+    source_observation_id: "observation-a-w1",
+    source_url: "https://publisher.example/w1",
+    verified_at: "2026-10-30",
+  }];
+  const page = await openMap("?faculty=b", value);
+  assert.match(page.elementFor("#coverage-note").textContent,
+    /1 faculty member appears only through source-verified coauthor reports/);
+  const details = page.elementFor("#detail-content");
+  assert(details.querySelectorAll(".detail-metric").some((metric) =>
+    metric.children[0].textContent === "1"
+    && metric.children[1].textContent === "works reported by coauthors"));
+  const button = details.querySelector(".collaborator-button");
+  details.dispatch("click", { target: button });
+  assert(details.querySelectorAll(".publication-meta").some((item) =>
+    item.textContent.includes("Bela Beta verified as coauthor from Ada Alpha's publication record")));
+  const source = details.querySelectorAll(".publication-source").find((item) =>
+    item.textContent === "Coauthor byline ↗");
+  assert.equal(source?.href, "https://publisher.example/w1");
+
+  const searchPage = await openMap("", value);
+  const search = searchPage.elementFor("#faculty-search");
+  search.value = "Bela";
+  search.dispatch("input");
+  const suggestion = searchPage.elementFor("#faculty-suggestions").querySelector("button");
+  assert.match(suggestion.children[1].textContent, /1 work reported by coauthors/);
+
+  const filtered = await openMap("?faculty=b&from=2024&to=2024", value);
+  assert.equal(filtered.elementFor("#detail-content").querySelector(".detail-no-links")?.textContent,
+    "No reported coauthor connections meet the current filters.");
 });
