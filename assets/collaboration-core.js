@@ -288,6 +288,7 @@
         publication_hold_reason: kind === "faculty" && typeof node.publication_hold_reason === "string"
           ? node.publication_hold_reason.trim() : "",
         mapped_publication_count: Math.max(0, integer(node.mapped_publication_count)),
+        reported_coauthor_work_count: Math.max(0, integer(node.reported_coauthor_work_count)),
         collaborator_count: Math.max(0, integer(node.collaborator_count)),
         collaboration_count: Math.max(0, integer(node.collaboration_count)),
         homepage_url: safeExternalUrl(node.homepage_url),
@@ -298,6 +299,9 @@
       };
     });
 
+    const facultyNodeIds = new Set(nodes
+      .filter((node) => node.kind === "faculty")
+      .map((node) => node.id));
     const seenEdges = new Set();
     const edges = input.edges.map((edge) => {
       const source = String(edge.source || "");
@@ -314,6 +318,30 @@
         assert(id && !seenWorks.has(id), `Edge ${key} has a duplicate work`);
         seenWorks.add(id);
         const year = work.year === null ? null : integer(work.year, null);
+        const reportedInput = work.reported_faculty_coauthors === undefined
+          ? [] : work.reported_faculty_coauthors;
+        assert(Array.isArray(reportedInput), `Edge ${key} has invalid reported coauthor evidence`);
+        const reported = reportedInput.map((entry) => {
+          const personId = String(entry?.person_id || "");
+          const sourcePersonId = String(entry?.source_person_id || "");
+          const sourceObservationId = String(entry?.source_observation_id || "");
+          const sourceUrl = safeExternalUrl(entry?.source_url);
+          const verifiedAt = String(entry?.verified_at || "");
+          assert([source, target].includes(personId) && facultyNodeIds.has(personId)
+            && facultyNodeIds.has(sourcePersonId) && personId !== sourcePersonId
+            && sourceObservationId
+            && sourceUrl.startsWith("https://") && /^\d{4}-\d{2}-\d{2}$/.test(verifiedAt),
+          `Edge ${key} has invalid reported coauthor evidence`);
+          return {
+            person_id: personId,
+            source_person_id: sourcePersonId,
+            source_observation_id: sourceObservationId,
+            source_url: sourceUrl,
+            verified_at: verifiedAt,
+          };
+        });
+        assert(new Set(reported.map((entry) => entry.person_id)).size === reported.length,
+          `Edge ${key} repeats reported coauthor evidence`);
         return {
           id,
           title: String(work.title || "Untitled work"),
@@ -326,6 +354,7 @@
           source_verification_urls: uniqueStrings(work.source_verification_urls)
             .map(safeExternalUrl)
             .filter(Boolean),
+          reported_faculty_coauthors: reported,
           topic: String(work.topic || ""),
         };
       });
@@ -1398,6 +1427,8 @@
         "latest_year",
         "cross_department",
         "cross_school",
+        "reported_coauthor_works",
+        "reported_coauthor_evidence",
       ] : [
         "faculty_1",
         "faculty_2",
@@ -1406,10 +1437,21 @@
         "latest_year",
         "cross_department",
         "cross_school",
+        "reported_coauthor_works",
+        "reported_coauthor_evidence",
       ],
     ];
     for (const edge of filtered.edges) {
       const years = edge.works.map((work) => work.year).filter(Number.isInteger);
+      const reportedWorks = edge.works.filter((work) =>
+        work.reported_faculty_coauthors?.length);
+      const reportedEvidence = reportedWorks.flatMap((work) =>
+        work.reported_faculty_coauthors.map((report) => {
+          const coauthor = graph.nodeById.get(report.person_id)?.name || report.person_id;
+          const reporter = graph.nodeById.get(report.source_person_id)?.name
+            || report.source_person_id;
+          return `${work.id}: ${coauthor} reported by ${reporter} (${report.source_observation_id}) ${report.source_url}`;
+        })).join("; ");
       const values = [
         graph.nodeById.get(edge.source)?.name || edge.source,
         graph.nodeById.get(edge.target)?.name || edge.target,
@@ -1418,6 +1460,8 @@
         years.length ? Math.max(...years) : "",
         edge.cross_department ? "yes" : "no",
         edge.cross_school ? "yes" : "no",
+        reportedWorks.length,
+        reportedEvidence,
       ];
       if (hasExternal) {
         values.splice(1, 0, graph.nodeById.get(edge.source)?.kind || "faculty");

@@ -261,7 +261,9 @@
       )} have mapped publications; ${plural(
         counts.unmapped_faculty_count,
         "cataloged faculty member",
-      )} do not. ${state.graph.quality.coverage_note || ""}`;
+      )} do not.${counts.reported_coauthor_only_faculty_count
+        ? ` ${plural(counts.reported_coauthor_only_faculty_count, "faculty member")} ${counts.reported_coauthor_only_faculty_count === 1 ? "appears" : "appear"} only through source-verified coauthor reports.`
+        : ""} ${state.graph.quality.coverage_note || ""}`;
       setLoading(false);
       if (state.view.selectedIds.length) focusSelection();
     } catch (error) {
@@ -1356,6 +1358,9 @@
       [filteredNode.degree, "visible collaborators"],
       [filteredNode.strength, "pair–work records"],
       [node.mapped_publication_count, "mapped works"],
+      ...(node.reported_coauthor_work_count
+        ? [[node.reported_coauthor_work_count, "works reported by coauthors"]]
+        : []),
     ]);
 
     const heading = element("div", "collaborator-heading");
@@ -1501,6 +1506,18 @@
         if (sourceUrl === work.url) continue;
         const sourceLink = element("a", "publication-source", `Verification source ${index + 1} ↗`);
         sourceLink.href = sourceUrl;
+        sourceLink.target = "_blank";
+        sourceLink.rel = "noopener noreferrer";
+        item.append(sourceLink);
+      }
+      for (const report of work.reported_faculty_coauthors || []) {
+        const coauthor = state.graph.nodeById.get(report.person_id)?.name || report.person_id;
+        const reporter = state.graph.nodeById.get(report.source_person_id)?.name
+          || report.source_person_id;
+        item.append(element("span", "publication-meta",
+          `${coauthor} verified as coauthor from ${reporter}'s publication record · verified ${report.verified_at}`));
+        const sourceLink = element("a", "publication-source", "Coauthor byline ↗");
+        sourceLink.href = report.source_url;
         sourceLink.target = "_blank";
         sourceLink.rel = "noopener noreferrer";
         item.append(sourceLink);

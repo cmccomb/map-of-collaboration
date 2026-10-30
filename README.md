@@ -12,10 +12,11 @@ artifact maintained by
 
 Each faculty node is a cataloged CMU faculty member. An edge connects two
 faculty members when the source artifact associates both stable faculty IDs
-with the same deduplicated work. Edge thickness is the number of shared works
-in the selected year range. One or more faculty members can be selected to
-compare the union of their visible collaboration neighborhoods and inspect the
-publications behind every displayed connection.
+with the same deduplicated work, either as own-source observations or as an
+exact reviewed coauthor reported by another faculty source. Edge thickness is
+the number of shared works in the selected year range. One or more faculty
+members can be selected to compare their visible collaboration neighborhoods
+and inspect the publications behind every displayed connection.
 
 The source artifact can mark a mapped point `collaboration_eligible: false`
 for a reviewed patent, edited book, or panel transcript. Such a work still
@@ -67,16 +68,24 @@ choice as `school_outlines=0` or `home_outlines=0`; Clear restores both.
 
 ## What this graph does—and does not—show
 
-The graph shows **observed coauthorship within the cataloged faculty set**. It
-does not infer collaboration from topical similarity, shared affiliations, or
-physical proximity. A missing edge is not proof that two people have never
-collaborated: faculty without a verified Scholar profile, works omitted by the
-source quality policy, and publications absent from the collected profiles are
-not represented.
+The graph shows **source-verified coauthorship within the cataloged faculty set**.
+It does not infer collaboration from topical similarity, shared affiliations,
+physical proximity, or an unchecked free-text name match. A missing edge is
+not proof that two people have never collaborated: faculty without a verified
+Scholar profile, works omitted by the source quality policy, and publications
+absent from the collected profiles are not represented.
 
 The build validates work-key uniqueness and faculty-reference integrity before
 creating the graph. It records coverage and missing-year counts in the deployed
 artifact so the interface can state its limits precisely.
+
+A publication point may carry `reported_faculty_coauthors` for a reviewed,
+exact byline match to another cataloged faculty member. Each entry identifies
+the reporting faculty member, the source observation, and a public byline
+verification URL. The graph uses the reported person for edges and labels the
+one-sided evidence in publication details and CSV. Their own-source mapped
+publication count stays separate, so a single coauthor report does not imply a
+complete publication history for that person.
 
 ## Local preview
 
