@@ -409,4 +409,15 @@ test("expanded connection identifies coauthor-report evidence and keeps own mapp
   const source = details.querySelectorAll(".publication-source").find((item) =>
     item.textContent === "Coauthor byline ↗");
   assert.equal(source?.href, "https://publisher.example/w1");
+
+  const searchPage = await openMap("", value);
+  const search = searchPage.elementFor("#faculty-search");
+  search.value = "Bela";
+  search.dispatch("input");
+  const suggestion = searchPage.elementFor("#faculty-suggestions").querySelector("button");
+  assert.match(suggestion.children[1].textContent, /1 work reported by coauthors/);
+
+  const filtered = await openMap("?faculty=b&from=2024&to=2024", value);
+  assert.equal(filtered.elementFor("#detail-content").querySelector(".detail-no-links")?.textContent,
+    "No reported coauthor connections meet the current filters.");
 });

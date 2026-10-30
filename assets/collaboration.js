@@ -1382,7 +1382,9 @@
             ? "No connections meet the current year, department, and strength filters."
             : node.kind === "external_coauthor"
               ? "No verified shared works are available for this external coauthor in the source artifact."
-              : "No mapped publications are available for this faculty member in the source artifact.",
+              : node.reported_coauthor_work_count
+                ? "No reported coauthor connections meet the current filters."
+                : "No mapped publications are available for this faculty member in the source artifact.",
         ),
       );
       return;
@@ -1591,7 +1593,9 @@
             "",
             node.mapped_publication_count
               ? `${department} · ${plural(node.mapped_publication_count, "mapped work")}`
-              : `${department} · no mapped works`,
+              : node.reported_coauthor_work_count
+                ? `${department} · ${plural(node.reported_coauthor_work_count, "work reported by coauthors")}`
+                : `${department} · no mapped works`,
           ),
         );
         item.append(button);

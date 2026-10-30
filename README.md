@@ -68,12 +68,15 @@ choice as `school_outlines=0` or `home_outlines=0`; Clear restores both.
 
 ## What this graph does—and does not—show
 
-The graph shows **source-verified coauthorship within the cataloged faculty set**.
-It does not infer collaboration from topical similarity, shared affiliations,
-physical proximity, or an unchecked free-text name match. A missing edge is
-not proof that two people have never collaborated: faculty without a verified
-Scholar profile, works omitted by the source quality policy, and publications
-absent from the collected profiles are not represented.
+The graph connects cataloged faculty members associated with the same mapped
+work. Older Scholar observations vary in byline completeness; a shared work
+record does not independently verify every author identity. Reviewed one-sided
+reports carry separate byline evidence. The graph does not infer collaboration
+from topical similarity, shared affiliations, physical proximity, or an
+unchecked free-text name match. A missing edge is not proof that two people
+have never collaborated: faculty without a verified Scholar profile, works
+omitted by the source quality policy, and publications absent from the collected
+profiles are not represented.
 
 The build validates work-key uniqueness and faculty-reference integrity before
 creating the graph. It records coverage and missing-year counts in the deployed
