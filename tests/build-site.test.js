@@ -9,6 +9,17 @@ const core = require("../assets/collaboration-core.js");
 
 const projectRoot = path.resolve(__dirname, "..");
 
+async function fixtureSiteSource(t) {
+  const sourceDirectory = await fs.mkdtemp(path.join(projectRoot, ".test-source-"));
+  t.after(async () => fs.rm(sourceDirectory, { recursive: true, force: true }));
+  await fs.cp(path.join(projectRoot, "assets"), path.join(sourceDirectory, "assets"),
+    { recursive: true });
+  await fs.copyFile(path.join(projectRoot, "index.html"),
+    path.join(sourceDirectory, "index.html"));
+  await fs.writeFile(path.join(sourceDirectory, "map-config.json"), JSON.stringify(config));
+  return sourceDirectory;
+}
+
 function response(body, { ok = true, status = 200, contentLength } = {}) {
   const text = typeof body === "string" ? body : JSON.stringify(body);
   return {
@@ -753,6 +764,16 @@ test("configuration and asset stamping enforce safe inputs", () => {
     () => build.parseConfig({ ...config, artifact_path: "../secret" }),
     /Invalid artifact_path/,
   );
+  assert.throws(() => build.parseConfig({ ...config, retained_layout: null }),
+    /Invalid retained_layout/);
+  assert.throws(() => build.parseConfig({ ...config, retained_layout: {
+    positions_path: "../secret.json", contract_path: "data/contract.json",
+  } }), /Invalid retained_layout positions_path/);
+  assert.deepEqual(build.parseConfig({ ...config, retained_layout: {
+    positions_path: "data/positions.json", contract_path: "data/contract.json",
+  } }).retained_layout, {
+    positions_path: "data/positions.json", contract_path: "data/contract.json",
+  });
   const html = [
     "assets/theme.js",
     "assets/collaboration.css",
@@ -927,12 +948,12 @@ test("layoutGraph tolerates dangling layout edges and overlapping seed positions
 });
 
 test("buildSite stages a complete pinned site with mocked upstream data", async (t) => {
-  const outputDirectory = await fs.mkdtemp(path.join(projectRoot, ".test-site-"));
-  t.after(async () => fs.rm(outputDirectory, { recursive: true, force: true }));
+  const sourceDirectory = await fixtureSiteSource(t);
+  const outputDirectory = path.join(sourceDirectory, "_site");
   const revision = "c".repeat(40);
   const requestedUrls = [];
   const result = await build.buildSite({
-    sourceDirectory: projectRoot,
+    sourceDirectory,
     outputDirectory,
     fetchImpl: async (url) => {
       requestedUrls.push(url);
@@ -965,11 +986,11 @@ test("buildSite stages a complete pinned site with mocked upstream data", async 
 });
 
 test("buildSite stages and parses schema 8 pending graph evidence", async (t) => {
-  const outputDirectory = await fs.mkdtemp(path.join(projectRoot, ".test-site-"));
-  t.after(async () => fs.rm(outputDirectory, { recursive: true, force: true }));
+  const sourceDirectory = await fixtureSiteSource(t);
+  const outputDirectory = path.join(sourceDirectory, "_site");
   const revision = "e".repeat(40);
   const result = await build.buildSite({
-    sourceDirectory: projectRoot,
+    sourceDirectory,
     outputDirectory,
     fetchImpl: async (url) => response(url.includes("/api/datasets/")
       ? { sha: revision } : pendingArtifactFixture()),

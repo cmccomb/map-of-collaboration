@@ -3,5 +3,9 @@
   "heading": "Faculty Collaboration at CMU",
   "dataset_id": "ccm/cmu-engineering-publications",
   "dataset_revision": "main",
-  "artifact_path": "maps/publications.json"
+  "artifact_path": "maps/publications.json",
+  "retained_layout": {
+    "positions_path": "data/retained-layout-c00b-positions.json",
+    "contract_path": "data/retained-layout-c00b-contract.json"
+  }
 }
