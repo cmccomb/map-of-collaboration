@@ -182,3 +182,14 @@ MCS faculty to that roster; publication coverage will grow department by
 department, starting with Mathematical Sciences. The Hugging Face dataset ID
 retains its Engineering name for this rollout. The graph shows only
 coauthorship observed in indexed works, even when a faculty roster is broader.
+
+## Retained collaboration positions
+
+`map-config.json` names a SHA-bound position baseline and graph contract from
+the immutable, already served parent revision. The site build first verifies
+that rebuilding that parent yields the exact published graph bytes. For the
+reviewed additive Yuvraj Agarwal binding, it checks every prior edge and node,
+the exact new edge delta, and then keeps all other published node coordinates.
+Yuvraj alone moves from the unconnected ring to his reviewed collaborator
+neighborhood. A different graph delta fails the build until a new parent
+baseline and contract have been independently reviewed.

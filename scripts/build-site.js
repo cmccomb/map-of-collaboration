@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
+const { pinReviewedParentPositions } = require("./retained-layout.js");
 
 const DEFAULT_OUTPUT_DIRECTORY = "_site";
 const MAX_API_BYTES = 1024 * 1024;
@@ -99,13 +100,27 @@ function parseConfig(input) {
     artifactPath && !artifactPath.startsWith("/") && !artifactPath.includes(".."),
     "Invalid artifact_path",
   );
-  return {
+  const config = {
     title: String(input.title || "CMU Engineering Collaborations"),
     heading: String(input.heading || "Faculty Collaboration at CMU Engineering"),
     dataset_id: datasetId,
     dataset_revision: String(input.dataset_revision || "main"),
     artifact_path: artifactPath,
   };
+  if (input.retained_layout !== undefined) {
+    assert(input.retained_layout && typeof input.retained_layout === "object",
+      "Invalid retained_layout");
+    for (const key of ["positions_path", "contract_path"]) {
+      const filePath = input.retained_layout[key];
+      assert(typeof filePath === "string" && /^data\/[A-Za-z0-9_.-]+\.json$/.test(filePath),
+        `Invalid retained_layout ${key}`);
+    }
+    config.retained_layout = {
+      positions_path: input.retained_layout.positions_path,
+      contract_path: input.retained_layout.contract_path,
+    };
+  }
+  return config;
 }
 
 async function fetchJsonDocument(fetchImpl, url, label, maximumBytes) {
@@ -940,11 +955,19 @@ async function buildSite({
     MAX_ARTIFACT_BYTES,
   );
   const graph = deriveGraph(artifactDocument.value, config, revision);
+  if (config.retained_layout) {
+    const [positionsText, contractText] = await Promise.all([
+      fs.readFile(path.join(sourceRoot, config.retained_layout.positions_path), "utf8"),
+      fs.readFile(path.join(sourceRoot, config.retained_layout.contract_path), "utf8"),
+    ]);
+    pinReviewedParentPositions(graph, positionsText, contractText);
+  }
   const graphText = JSON.stringify(graph);
   const graphDigest = crypto.createHash("sha256").update(graphText).digest("hex");
   const artifactName = `collaborations.${revision}.json`;
+  const { retained_layout: _buildOnlyLayout, ...publicConfig } = config;
   const outputConfig = {
-    ...config,
+    ...publicConfig,
     dataset_revision: revision,
     graph_artifact: `data/${artifactName}`,
     graph_sha256: graphDigest,
