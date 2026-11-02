@@ -4,13 +4,15 @@ const crypto = require("node:crypto");
 
 // These are public, already served artifacts from the exact parent release.
 // A new graph change requires a separately reviewed parent and delta contract.
-const PARENT_REVISION = "c00b628be087941fa61a1376759994902936e553";
-const PARENT_GRAPH_SHA256 = "b341aa8077e3e268f9f1ed7eb85a625323fa67465e6f750708f0e8078f289154";
-const POSITIONS_SHA256 = "bc2bc9da2e064a46a2b49489d386d5e6facc3151f33fd1250b48b77e301fb058";
-const CONTRACT_SHA256 = "9cbc06b16d54703c614537fe62fa92c0b34943c2c1b550f38d138e8c5971983a";
+const PARENT_REVISION = "7bf6510e0c6d02caacd529d4b43ff7f72da4b451";
+const PARENT_GRAPH_SHA256 = "4b593e654ee95fccf43727a6820629f9f66b307a3f32d9e168e470317177ecb6";
+const PARENT_GRAPH_BYTES = 3259325;
+const POSITIONS_SHA256 = "0184fd97b6a86550f70c4b10cc723886b6783eb5ec737ce32d690715cadcaf9c";
+const CONTRACT_SHA256 = "339fb3fca9bbe7b9413b0bfc8aa24393b456db959e3be755b935ccc6fe72c9c1";
 const NODE_COUNT_FIELDS = [
   "publication_count",
   "mapped_publication_count",
+  "pending_publication_count",
   "collaborator_count",
   "collaboration_count",
 ];
@@ -18,6 +20,7 @@ const STATIC_SECTIONS = ["quality", "years", "departments", "academic_homes", "s
 const PUBLISHED_PARENT = Object.freeze({
   revision: PARENT_REVISION,
   graphSha256: PARENT_GRAPH_SHA256,
+  graphBytes: PARENT_GRAPH_BYTES,
   positionsSha256: POSITIONS_SHA256,
   contractSha256: CONTRACT_SHA256,
 });
@@ -64,9 +67,10 @@ function parsePinnedDocuments(positionsText, contractText, expected) {
     throw new Error("Retained graph layout: baseline or contract is invalid JSON");
   }
   for (const document of [positions, contract]) {
-    assert(document.schema_version === 1, "unknown baseline schema");
+    assert(document.schema_version === 2, "unknown baseline schema");
     assert(document.parent_dataset_revision === expected.revision, "parent revision changed");
     assert(document.parent_graph_sha256 === expected.graphSha256, "parent graph SHA changed");
+    assert(document.parent_graph_bytes === expected.graphBytes, "parent graph byte count changed");
   }
   assert(contract.position_baseline_sha256 === expected.positionsSha256, "baseline binding changed");
   assert(positions.positions && typeof positions.positions === "object", "positions are missing");
@@ -97,13 +101,15 @@ function pinReviewedParentPositions(graph, positionsText, contractText, expected
 
   // Rebuilding the immutable parent must produce the exact already served bytes.
   if (graph.source.dataset_revision === expected.revision) {
-    assert(sha256(JSON.stringify(graph)) === expected.graphSha256,
-      "immutable parent graph no longer rebuilds byte-for-byte");
     for (const node of graph.nodes) {
       const baseline = positions[node.id];
-      assert(baseline && baseline[0] === node.x && baseline[1] === node.y,
-        "immutable parent position changed");
+      assert(baseline, "immutable parent node set changed");
+      [node.x, node.y] = baseline;
     }
+    const parentText = JSON.stringify(graph);
+    assert(Buffer.byteLength(parentText) === expected.graphBytes &&
+      sha256(parentText) === expected.graphSha256,
+    "immutable parent graph no longer rebuilds byte-for-byte");
     return graph;
   }
 
@@ -131,6 +137,8 @@ function pinReviewedParentPositions(graph, positionsText, contractText, expected
     "candidate graph counts differ from the reviewed delta");
 
   const parentEdgeKeys = new Set(Object.keys(contract.parent_edge_sha256));
+  const allowedNewEdgeNodes = new Set(contract.allowed_new_edge_node_ids);
+  const forbiddenPartners = new Set(contract.forbidden_partner_ids);
   const seenEdges = new Set();
   const newEdges = [];
   for (const edge of graph.edges) {
@@ -141,11 +149,10 @@ function pinReviewedParentPositions(graph, positionsText, contractText, expected
       assert(sha256(JSON.stringify(edge)) === contract.parent_edge_sha256[key],
         `prior graph edge ${key} changed`);
     } else {
-      assert(edge.source === contract.moving_node_id || edge.target === contract.moving_node_id,
+      assert(allowedNewEdgeNodes.has(edge.source) || allowedNewEdgeNodes.has(edge.target),
         "new edge is unrelated to the reviewed person");
-      assert(edge.source !== contract.forbidden_partner_id &&
-        edge.target !== contract.forbidden_partner_id,
-      "unreviewed Yuvraj-Seshan edge appeared");
+      assert(!forbiddenPartners.has(edge.source) && !forbiddenPartners.has(edge.target),
+        "forbidden partner edge appeared");
       newEdges.push(edge);
     }
   }
@@ -159,10 +166,7 @@ function pinReviewedParentPositions(graph, positionsText, contractText, expected
   assert(sha256(JSON.stringify(reviewedNewEdges)) === contract.expected_new_edges_sha256,
     "new edge metadata differs from the reviewed delta");
 
-  const partnerWeights = new Map(newEdges.map((edge) => [
-    edge.source === contract.moving_node_id ? edge.target : edge.source,
-    edge.works.length,
-  ]));
+  const allowedMovers = new Set(contract.allowed_position_movers);
   const seenNodes = new Set();
   for (const node of graph.nodes) {
     assert(!seenNodes.has(node.id), "duplicate graph node");
@@ -171,19 +175,13 @@ function pinReviewedParentPositions(graph, positionsText, contractText, expected
     assert(sha256(JSON.stringify(staticNode(node))) ===
       contract.parent_node_static_sha256[node.id],
     `prior graph node ${node.id} changed`);
-    const expectedCounts = [...contract.parent_node_counts[node.id]];
-    if (node.id === contract.moving_node_id) {
-      expectedCounts[0] += contract.expected_moving_node_publication_delta;
-      expectedCounts[1] += contract.expected_moving_node_mapped_publication_delta;
-      expectedCounts[2] += contract.expected_new_edge_count;
-      expectedCounts[3] += contract.expected_new_pair_work_count;
-    } else if (partnerWeights.has(node.id)) {
-      expectedCounts[2] += 1;
-      expectedCounts[3] += partnerWeights.get(node.id);
-    }
+    const parentCounts = contract.parent_node_counts[node.id];
+    assert(parentCounts && typeof parentCounts === "object", "parent node counts are missing");
+    const deltas = contract.expected_node_count_deltas[node.id] || {};
+    const expectedCounts = NODE_COUNT_FIELDS.map((field) => parentCounts[field] + (deltas[field] || 0));
     assert(JSON.stringify(counts(node)) === JSON.stringify(expectedCounts),
       `prior graph node counts for ${node.id} changed unexpectedly`);
-    if (node.id !== contract.moving_node_id) {
+    if (!allowedMovers.has(node.id)) {
       [node.x, node.y] = positions[node.id];
     } else {
       assert(Number.isFinite(node.x) && Number.isFinite(node.y),
@@ -191,6 +189,9 @@ function pinReviewedParentPositions(graph, positionsText, contractText, expected
     }
   }
   assert(seenNodes.size === Object.keys(positions).length, "prior graph node disappeared");
+  assert([...allowedMovers].every((id) => seenNodes.has(id)), "reviewed mover is missing");
+  assert(Object.keys(contract.expected_node_count_deltas).every((id) => seenNodes.has(id)),
+    "reviewed count delta names an unknown node");
   return graph;
 }
 

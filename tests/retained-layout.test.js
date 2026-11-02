@@ -7,9 +7,10 @@ const { pinReviewedParentPositions } = require("../scripts/retained-layout.js");
 
 const sha256 = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const clone = (value) => structuredClone(value);
+const COUNT_FIELDS = ["publication_count", "mapped_publication_count",
+  "pending_publication_count", "collaborator_count", "collaboration_count"];
 const staticNode = (node) => Object.fromEntries(Object.entries(node).filter(([key]) =>
-  !["x", "y", "publication_count", "mapped_publication_count",
-    "collaborator_count", "collaboration_count"].includes(key)));
+  key !== "x" && key !== "y" && !COUNT_FIELDS.includes(key)));
 
 function fixture() {
   const parent = {
@@ -25,17 +26,17 @@ function fixture() {
     schools: [{ school_id: "scs" }],
     nodes: [
       { id: "moving", name: "Moving", publication_count: 0,
-        mapped_publication_count: 0, collaborator_count: 0,
+        mapped_publication_count: 0, pending_publication_count: 0, collaborator_count: 0,
         collaboration_count: 0, x: -1, y: 0 },
       { id: "partner", name: "Partner", publication_count: 1,
-        mapped_publication_count: 1, collaborator_count: 1,
+        mapped_publication_count: 1, pending_publication_count: 0, collaborator_count: 1,
         collaboration_count: 1, x: 0, y: 0 },
       { id: "other", name: "Other", publication_count: 1,
-        mapped_publication_count: 1, collaborator_count: 1,
+        mapped_publication_count: 1, pending_publication_count: 0, collaborator_count: 1,
         collaboration_count: 1, x: 1, y: 0 },
     ],
     edges: [{ source: "partner", target: "other", works: [{ id: "old" }] }],
-    counts: { edge_count: 1, pair_work_count: 1 },
+    counts: { edge_count: 1, pair_work_count: 1, pending_work_count: 0 },
   };
   const candidate = clone(parent);
   candidate.source.dataset_revision = "b".repeat(40);
@@ -56,25 +57,31 @@ function fixture() {
   candidate.counts.edge_count = 2;
   candidate.counts.pair_work_count = 3;
   const positions = {
-    schema_version: 1,
+    schema_version: 2,
     parent_dataset_revision: parent.source.dataset_revision,
     parent_graph_sha256: sha256(JSON.stringify(parent)),
+    parent_graph_bytes: Buffer.byteLength(JSON.stringify(parent)),
     positions: Object.fromEntries(parent.nodes.map((node) => [node.id, [node.x, node.y]])),
   };
   const positionsText = JSON.stringify(positions);
   const contract = {
-    schema_version: 1,
+    schema_version: 2,
     parent_dataset_revision: parent.source.dataset_revision,
     parent_graph_sha256: positions.parent_graph_sha256,
+    parent_graph_bytes: positions.parent_graph_bytes,
     position_baseline_sha256: sha256(positionsText),
     parent_node_count: parent.nodes.length,
     parent_edge_count: parent.edges.length,
-    moving_node_id: "moving",
-    forbidden_partner_id: "forbidden",
+    expected_node_count_deltas: {
+      moving: { publication_count: 2, mapped_publication_count: 2,
+        collaborator_count: 1, collaboration_count: 2 },
+      partner: { collaborator_count: 1, collaboration_count: 2 },
+    },
+    allowed_position_movers: ["moving"],
+    allowed_new_edge_node_ids: ["moving"],
+    forbidden_partner_ids: ["forbidden"],
     expected_new_edge_count: 1,
     expected_new_pair_work_count: 2,
-    expected_moving_node_publication_delta: 2,
-    expected_moving_node_mapped_publication_delta: 2,
     expected_candidate_counts: candidate.counts,
     expected_new_edges_sha256: sha256(JSON.stringify([
       ["moving|partner", candidate.edges[1]],
@@ -86,8 +93,7 @@ function fixture() {
     parent_node_static_sha256: Object.fromEntries(parent.nodes.map((node) =>
       [node.id, sha256(JSON.stringify(staticNode(node)))])),
     parent_node_counts: Object.fromEntries(parent.nodes.map((node) =>
-      [node.id, [node.publication_count, node.mapped_publication_count,
-        node.collaborator_count, node.collaboration_count]])),
+      [node.id, Object.fromEntries(COUNT_FIELDS.map((field) => [field, node[field]]))])),
     parent_edge_sha256: { "other|partner": sha256(JSON.stringify(parent.edges[0])) },
     parent_schema_version: parent.schema_version,
     parent_title: parent.title,
@@ -98,18 +104,21 @@ function fixture() {
   const expected = {
     revision: parent.source.dataset_revision,
     graphSha256: positions.parent_graph_sha256,
+    graphBytes: positions.parent_graph_bytes,
     positionsSha256: sha256(positionsText),
     contractSha256: sha256(contractText),
   };
   return { parent, candidate, positionsText, contractText, expected };
 }
 
-test("an immutable parent rebuild is byte-identical and reviewed growth pins prior nodes", () => {
+test("an immutable parent rebuild repins served positions and reviewed growth pins prior nodes", () => {
   const data = fixture();
+  data.parent.nodes[2].x = 0.75;
   assert.strictEqual(
     pinReviewedParentPositions(data.parent, data.positionsText, data.contractText, data.expected),
     data.parent,
   );
+  assert.equal(sha256(JSON.stringify(data.parent)), data.expected.graphSha256);
   const candidate = pinReviewedParentPositions(
     data.candidate, data.positionsText, data.contractText, data.expected);
   assert.deepEqual(candidate.nodes.map(({ x, y }) => [x, y]),
@@ -148,10 +157,10 @@ test("a stale baseline, changed prior edge, or unrelated graph change fails clos
   assert.throws(() => pin(extraNode), /node set changed/);
 });
 
-test("the reviewed mover alone may move; a changed parent cannot rebuild", () => {
+test("the reviewed mover alone may move; a changed parent field cannot rebuild", () => {
   const data = fixture();
   const changedParent = clone(data.parent);
-  changedParent.nodes[2].x = 0.75;
+  changedParent.nodes[2].name = "Changed";
   assert.throws(() => pinReviewedParentPositions(
     changedParent, data.positionsText, data.contractText, data.expected),
   /immutable parent graph no longer rebuilds/);
@@ -175,4 +184,39 @@ test("the reviewed mover alone may move; a changed parent cannot rebuild", () =>
   assert.throws(() => pinReviewedParentPositions(
     extraField, data.positionsText, data.contractText, data.expected),
   /top-level graph fields changed/);
+});
+
+test("all-held pending works change one reviewed count and pin every prior position", () => {
+  const data = fixture();
+  const contract = JSON.parse(data.contractText);
+  const candidate = clone(data.parent);
+  candidate.source.dataset_revision = "b".repeat(40);
+  candidate.generated_at_utc = "2026-11-02T00:00:00Z";
+  candidate.source.artifact_generated_at_utc = candidate.generated_at_utc;
+  candidate.nodes[0].pending_publication_count = 2;
+  candidate.nodes[0].x = 0.25;
+  candidate.nodes[1].x = -0.25;
+  candidate.nodes[2].x = 0.75;
+  candidate.counts.pending_work_count = 2;
+  contract.expected_candidate_counts = candidate.counts;
+  contract.expected_node_count_deltas = { moving: { pending_publication_count: 2 } };
+  contract.allowed_position_movers = [];
+  contract.allowed_new_edge_node_ids = [];
+  contract.expected_new_edge_count = 0;
+  contract.expected_new_pair_work_count = 0;
+  contract.expected_new_edges_sha256 = sha256(JSON.stringify([]));
+  const contractText = JSON.stringify(contract);
+  const expected = { ...data.expected, contractSha256: sha256(contractText) };
+  pinReviewedParentPositions(candidate, data.positionsText, contractText, expected);
+  assert.deepEqual(candidate.nodes.map(({ x, y }) => [x, y]),
+    [[-1, 0], [0, 0], [1, 0]]);
+  assert.equal(candidate.edges.length, 1);
+  const changedCount = clone(candidate);
+  changedCount.nodes[1].pending_publication_count += 1;
+  assert.throws(() => pinReviewedParentPositions(
+    changedCount, data.positionsText, contractText, expected), /node counts/);
+  const addedEdge = clone(candidate);
+  addedEdge.edges.push({ source: "moving", target: "partner", works: [{ id: "unreviewed" }] });
+  assert.throws(() => pinReviewedParentPositions(
+    addedEdge, data.positionsText, contractText, expected), /new edge is unrelated/);
 });
