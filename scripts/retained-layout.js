@@ -4,11 +4,11 @@ const crypto = require("node:crypto");
 
 // These are public, already served artifacts from the exact parent release.
 // A new graph change requires a separately reviewed parent and delta contract.
-const PARENT_REVISION = "e0823827ae68f69f8a00b075f16e98395191134a";
-const PARENT_GRAPH_SHA256 = "6f0b4fc3fb77b381488dbae938af4a0b622c58ea866795d852aced85730afdb2";
-const PARENT_GRAPH_BYTES = 3259325;
-const POSITIONS_SHA256 = "c1e9dc0231a2d6c1b6d73b68b3944a9f2db8cb675dbda7b681c62b2edeb5a7e6";
-const CONTRACT_SHA256 = "12834af541cad60e72cb94049084222f14f07b6e8b1b6222262088e6398d8da2";
+const PARENT_REVISION = "cc9efdba1f704f442b5666ae2ae38f4bfd86c3c1";
+const PARENT_GRAPH_SHA256 = "e60e751040455cae30b1c517e7fa0313b30fa87e160c3b74867029f69d03a323";
+const PARENT_GRAPH_BYTES = 3259326;
+const POSITIONS_SHA256 = "af0510bb73423e51cfc296c78791764a41ad5f3d6d15f9cba2f9f23b24c79cc5";
+const CONTRACT_SHA256 = "d488932d4f3519f3f242a2f67236b87b5d77580324db5633ab4c7e09f0ada73e";
 const NODE_COUNT_FIELDS = [
   "publication_count",
   "mapped_publication_count",
@@ -88,7 +88,38 @@ function parsePinnedDocuments(positionsText, contractText, expected) {
   return { positions: positions.positions, contract };
 }
 
-function pinReviewedParentPositions(graph, positionsText, contractText, expected = PUBLISHED_PARENT) {
+function assertReviewedPendingWorkIds(artifact, contract, parentOnly, expectedCount) {
+  if (!Object.hasOwn(contract, "expected_new_pending_work_ids")) return;
+  assert(Array.isArray(artifact?.pending_publications), "pending publication source is missing");
+  const ids = artifact.pending_publications.map((row) => row.work_id);
+  assert(ids.length === expectedCount, "pending work count differs from graph");
+  assert(ids.every((id) => typeof id === "string" && /^work-[0-9a-f]{64}$/.test(id)),
+    "pending work ID is malformed");
+  assert(new Set(ids).size === ids.length, "duplicate pending work ID");
+  const expectedNew = contract.expected_new_pending_work_ids;
+  assert(Array.isArray(expectedNew) && expectedNew.length ===
+    contract.expected_new_pending_work_count &&
+    expectedNew.every((id) => typeof id === "string" && /^work-[0-9a-f]{64}$/.test(id)) &&
+    new Set(expectedNew).size === expectedNew.length &&
+    JSON.stringify(expectedNew) === JSON.stringify([...expectedNew].sort()),
+  "reviewed new pending work IDs are malformed");
+  assert(sha256(JSON.stringify(expectedNew)) === contract.expected_new_pending_work_ids_sha256,
+    "reviewed new pending work IDs SHA changed");
+  const expectedSet = new Set(expectedNew);
+  const prior = ids.filter((id) => !expectedSet.has(id)).sort();
+  const newIds = ids.filter((id) => expectedSet.has(id)).sort();
+  assert(sha256(JSON.stringify(prior)) === contract.parent_pending_work_ids_sha256,
+    "prior pending work IDs changed");
+  if (parentOnly) {
+    assert(newIds.length === 0, "immutable parent contains reviewed new pending work IDs");
+  } else {
+    assert(JSON.stringify(newIds) === JSON.stringify(expectedNew),
+      "new pending work IDs differ from reviewed selection");
+  }
+}
+
+function pinReviewedParentPositions(graph, positionsText, contractText, expected = PUBLISHED_PARENT,
+  artifact = null) {
   const { positions, contract } = parsePinnedDocuments(positionsText, contractText, expected);
   assert(graph?.source?.dataset_revision, "graph revision is missing");
   assert(graph.nodes?.length === contract.parent_node_count, "node set changed");
@@ -101,6 +132,7 @@ function pinReviewedParentPositions(graph, positionsText, contractText, expected
 
   // Rebuilding the immutable parent must produce the exact already served bytes.
   if (graph.source.dataset_revision === expected.revision) {
+    assertReviewedPendingWorkIds(artifact, contract, true, graph.counts.pending_work_count);
     for (const node of graph.nodes) {
       const baseline = positions[node.id];
       assert(baseline, "immutable parent node set changed");
@@ -115,6 +147,7 @@ function pinReviewedParentPositions(graph, positionsText, contractText, expected
 
   assert(/^[0-9a-f]{40}$/.test(graph.source.dataset_revision),
     "candidate dataset revision is not immutable");
+  assertReviewedPendingWorkIds(artifact, contract, false, graph.counts.pending_work_count);
   assert(JSON.stringify(Object.keys(graph)) ===
     JSON.stringify(contract.parent_top_level_keys), "top-level graph fields changed");
   assert(graph.schema_version === contract.parent_schema_version,

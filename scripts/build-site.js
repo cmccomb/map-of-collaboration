@@ -960,7 +960,8 @@ async function buildSite({
       fs.readFile(path.join(sourceRoot, config.retained_layout.positions_path), "utf8"),
       fs.readFile(path.join(sourceRoot, config.retained_layout.contract_path), "utf8"),
     ]);
-    pinReviewedParentPositions(graph, positionsText, contractText);
+    pinReviewedParentPositions(graph, positionsText, contractText,
+      undefined, artifactDocument.value);
   }
   const graphText = JSON.stringify(graph);
   const graphDigest = crypto.createHash("sha256").update(graphText).digest("hex");
