@@ -220,3 +220,48 @@ test("all-held pending works change one reviewed count and pin every prior posit
   assert.throws(() => pinReviewedParentPositions(
     addedEdge, data.positionsText, contractText, expected), /new edge is unrelated/);
 });
+
+test("reviewed pending work IDs preserve every prior ID and reject substitution", () => {
+  const data = fixture();
+  const contract = JSON.parse(data.contractText);
+  const workId = (hex) => `work-${hex.repeat(64)}`;
+  const selectedId = workId("b");
+  const candidate = clone(data.parent);
+  candidate.source.dataset_revision = "b".repeat(40);
+  candidate.generated_at_utc = "2026-11-02T00:00:00Z";
+  candidate.source.artifact_generated_at_utc = candidate.generated_at_utc;
+  candidate.nodes[0].pending_publication_count = 1;
+  candidate.nodes[0].x = 0.25;
+  candidate.counts.pending_work_count = 1;
+  contract.expected_candidate_counts = candidate.counts;
+  contract.expected_node_count_deltas = { moving: { pending_publication_count: 1 } };
+  contract.allowed_position_movers = [];
+  contract.allowed_new_edge_node_ids = [];
+  contract.expected_new_edge_count = 0;
+  contract.expected_new_pair_work_count = 0;
+  contract.expected_new_edges_sha256 = sha256(JSON.stringify([]));
+  contract.parent_pending_work_ids_sha256 = sha256(JSON.stringify([]));
+  contract.expected_new_pending_work_count = 1;
+  contract.expected_new_pending_work_ids = [selectedId];
+  contract.expected_new_pending_work_ids_sha256 = sha256(JSON.stringify([selectedId]));
+  const contractText = JSON.stringify(contract);
+  const expected = { ...data.expected, contractSha256: sha256(contractText) };
+  const pin = (graph, artifact) => pinReviewedParentPositions(
+    graph, data.positionsText, contractText, expected, artifact);
+
+  const parentArtifact = { pending_publications: [] };
+  const candidateArtifact = { pending_publications: [{ work_id: selectedId }] };
+  pin(clone(data.parent), parentArtifact);
+  pin(clone(candidate), candidateArtifact);
+  assert.throws(() => pin(clone(candidate), null), /pending publication source is missing/);
+  assert.throws(() => pin(clone(candidate), { pending_publications: [] }),
+    /pending work count differs from graph/);
+  assert.throws(() => pin(clone(candidate), {
+    pending_publications: [{ work_id: workId("c") }],
+  }), /prior pending work IDs changed/);
+  assert.throws(() => pin(clone(candidate), {
+    pending_publications: [{ work_id: selectedId }, { work_id: selectedId }],
+  }), /pending work count differs from graph/);
+  assert.throws(() => pin(clone(data.parent), candidateArtifact),
+    /pending work count differs from graph/);
+});
