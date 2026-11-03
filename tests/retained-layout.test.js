@@ -157,6 +157,24 @@ test("a stale baseline, changed prior edge, or unrelated graph change fails clos
   assert.throws(() => pin(extraNode), /node set changed/);
 });
 
+test("a provisional candidate or reviewed contract without selected work IDs fails closed", () => {
+  const data = fixture();
+  const provisional = JSON.parse(data.contractText);
+  provisional.candidate_contract_status =
+    "UNAPPROVED_PROVISIONAL_PENDING_EXACT_YUVRAJ_AGARWAL17_STAGE_GRAPH";
+  const provisionalText = JSON.stringify(provisional);
+  assert.throws(() => pinReviewedParentPositions(
+    clone(data.candidate), data.positionsText, provisionalText,
+    { ...data.expected, contractSha256: sha256(provisionalText) }),
+  /candidate contract is not reviewed/);
+  provisional.candidate_contract_status = "REVIEWED_YUVRAJ_AGARWAL17_EXACT_STAGE_GRAPH";
+  const reviewedText = JSON.stringify(provisional);
+  assert.throws(() => pinReviewedParentPositions(
+    clone(data.candidate), data.positionsText, reviewedText,
+    { ...data.expected, contractSha256: sha256(reviewedText) }),
+  /reviewed pending work selection is missing/);
+});
+
 test("the reviewed mover alone may move; a changed parent field cannot rebuild", () => {
   const data = fixture();
   const changedParent = clone(data.parent);
