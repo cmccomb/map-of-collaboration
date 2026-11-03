@@ -161,13 +161,13 @@ test("a provisional candidate or reviewed contract without selected work IDs fai
   const data = fixture();
   const provisional = JSON.parse(data.contractText);
   provisional.candidate_contract_status =
-    "UNAPPROVED_PROVISIONAL_PENDING_EXACT_YUVRAJ_AGARWAL17_STAGE_GRAPH";
+    "UNAPPROVED_PROVISIONAL_PENDING_EXACT_BRYAN_WILDER11_STAGE_GRAPH";
   const provisionalText = JSON.stringify(provisional);
   assert.throws(() => pinReviewedParentPositions(
     clone(data.candidate), data.positionsText, provisionalText,
     { ...data.expected, contractSha256: sha256(provisionalText) }),
   /candidate contract is not reviewed/);
-  provisional.candidate_contract_status = "REVIEWED_YUVRAJ_AGARWAL17_EXACT_STAGE_GRAPH";
+  provisional.candidate_contract_status = "REVIEWED_BRYAN_WILDER11_EXACT_STAGE_GRAPH";
   const reviewedText = JSON.stringify(provisional);
   assert.throws(() => pinReviewedParentPositions(
     clone(data.candidate), data.positionsText, reviewedText,
