@@ -4,11 +4,11 @@ const crypto = require("node:crypto");
 
 // These are public, already served artifacts from the exact parent release.
 // A new graph change requires a separately reviewed parent and delta contract.
-const PARENT_REVISION = "768b30e5265a13aa5d0e7f26bc8d68e16b8d5d53";
-const PARENT_GRAPH_SHA256 = "3a889ad2b05ef45e01d5f14b7f5d8024c3f9117e29400f2fa46ddc8934fddef1";
+const PARENT_REVISION = "ca27d2c9e649d022bdbfdb375e879532960a47a1";
+const PARENT_GRAPH_SHA256 = "96fe9e59c0e575b273cde20819c3035d616dcdfdde023ae6bf8fd1938aab7e99";
 const PARENT_GRAPH_BYTES = 3259327;
-const POSITIONS_SHA256 = "3faacefe5bc01d6b3c90aa526c9d812eb0316bc7b7cb833f770eb891fabc6c5a";
-const CONTRACT_SHA256 = "3ab2ea04a6389430c31e216262057f17833178961c7237b34e4ef5907017e450";
+const POSITIONS_SHA256 = "9e6ed4ebf2415c242f2e43d9d124da87be477b4e5dcc34965f122d95dfda218f";
+const CONTRACT_SHA256 = "70db39e0c2fc89526cca3d2a80830e7703001842fe945e899b5109985350d821";
 const NODE_COUNT_FIELDS = [
   "publication_count",
   "mapped_publication_count",
