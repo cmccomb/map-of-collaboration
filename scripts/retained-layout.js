@@ -4,11 +4,11 @@ const crypto = require("node:crypto");
 
 // These are public, already served artifacts from the exact parent release.
 // A new graph change requires a separately reviewed parent and delta contract.
-const PARENT_REVISION = "2676f44aa9eb7ccebcfff3e019f9ad2cfdd2c3d2";
-const PARENT_GRAPH_SHA256 = "550395ad010426bcbd5d797d11cf89a9f66d652bf79b212117ec2faf43fd7508";
-const PARENT_GRAPH_BYTES = 3259326;
-const POSITIONS_SHA256 = "9b2ad8fa5348bffccc740dde192249b42a3fa428555b0e81fec88f24f44b4ee2";
-const CONTRACT_SHA256 = "be2c0a4c4c8c29d8ea75d291ac53d23e6ffc037a9102fabccbec5a1489e423a2";
+const PARENT_REVISION = "768b30e5265a13aa5d0e7f26bc8d68e16b8d5d53";
+const PARENT_GRAPH_SHA256 = "3a889ad2b05ef45e01d5f14b7f5d8024c3f9117e29400f2fa46ddc8934fddef1";
+const PARENT_GRAPH_BYTES = 3259327;
+const POSITIONS_SHA256 = "3faacefe5bc01d6b3c90aa526c9d812eb0316bc7b7cb833f770eb891fabc6c5a";
+const CONTRACT_SHA256 = "3ab2ea04a6389430c31e216262057f17833178961c7237b34e4ef5907017e450";
 const NODE_COUNT_FIELDS = [
   "publication_count",
   "mapped_publication_count",
@@ -143,6 +143,16 @@ function pinReviewedParentPositions(graph, positionsText, contractText, expected
       sha256(parentText) === expected.graphSha256,
     "immutable parent graph no longer rebuilds byte-for-byte");
     return graph;
+  }
+
+  // A parent-only rollover is useful for byte parity but cannot approve a
+  // candidate graph. Reviewed candidates must also bind the selected pending
+  // work IDs; otherwise a count-only contract could accept the wrong rows.
+  if (Object.hasOwn(contract, "candidate_contract_status")) {
+    assert(/^REVIEWED_[A-Z0-9_]+_EXACT_STAGE_GRAPH$/.test(
+      contract.candidate_contract_status), "candidate contract is not reviewed");
+    assert(Object.hasOwn(contract, "expected_new_pending_work_ids"),
+      "reviewed pending work selection is missing");
   }
 
   assert(/^[0-9a-f]{40}$/.test(graph.source.dataset_revision),
