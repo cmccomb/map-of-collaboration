@@ -188,10 +188,9 @@ coauthorship observed in indexed works, even when a faculty roster is broader.
 `map-config.json` names a SHA-bound position baseline and graph contract from
 the immutable, already served parent revision. The site build first verifies
 that rebuilding that parent yields the exact published graph bytes after
-restoring its already published node positions. For the reviewed 50
-pending Justine Cassell works, it checks every prior edge and node, the 50
-selected pending-work IDs, and the exact pending-work and faculty count delta,
-then keeps every published node coordinate. The reviewed staged graph has no
-new edge or pair-work. Any new edge, pair-work, changed prior record, or different
-selected work fails the build until a new parent baseline and contract have
-been independently reviewed.
+restoring its already published node positions. For the reviewed Rohan Padhye
+batch, it checks every prior edge and node, the 44 selected pending-work IDs,
+two exact canonical-work reuses, and the resulting Padhye–Sekar edge with two
+shared works. It then keeps every published node coordinate. Any additional
+edge, pair-work, changed prior record, or different selected work fails the
+build until a new parent baseline and contract have been independently reviewed.
