@@ -5,7 +5,7 @@
   "dataset_revision": "main",
   "artifact_path": "maps/publications.json",
   "retained_layout": {
-    "positions_path": "data/retained-layout-8f919-positions.json",
-    "contract_path": "data/retained-layout-8f919-contract.json"
+    "positions_path": "data/retained-layout-cbaeec-positions.json",
+    "contract_path": "data/retained-layout-cbaeec-contract.json"
   }
 }
